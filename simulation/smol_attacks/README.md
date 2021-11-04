@@ -1,0 +1,3 @@
+# Smol Attacks
+
+This is similar to the `galaxy/simulation/attacks` directory, except that instead of using 1 million gateways and 179 mobile sensors broadcasting every 0.5 seconds across the city of Beijing, China, we have 60 gateways and 12 mobile sensors broadcasting every 3.3 seconds around a little neighborhood near Peking University, which is 800 meters wide and 950 meters long. We also assume BLE ranges between 10m and 20m, which is a little larger than our original assumption of 5m to 15m. This gives us a lot less data to work with, which is more managable than our original attack. All the data files also fit in GitHub now, and can be found in `smol_truth` and `smol_sim`.
