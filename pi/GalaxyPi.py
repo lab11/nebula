@@ -1,6 +1,8 @@
 import struct
 from bluepy.btle import ScanEntry, Peripheral, Scanner, DefaultDelegate
 import argparse
+import time
+import csv
 
 parser = argparse.ArgumentParser(description='Print advertisement data from a BLE device')
 parser.add_argument('addr', metavar='A', type=str, help='Address of the form XX:XX:XX:XX:XX:XX')
@@ -26,8 +28,8 @@ class ScanDelegate(DefaultDelegate):
 # create a scanner object that sends BLE broadcast packets to the ScanDelegate
 scanner = Scanner().withDelegate(ScanDelegate())
 
-# start the scanner for 5 seconds 
-scanner.start(5)
+# start the scanner for 0.5 second
+scanner.start(0.5)
 scanner.process()
 scanner.stop()
 #while True: //scan 10 times
@@ -38,27 +40,50 @@ scanner.stop()
 #    count += 1
 #    print(count)
 
-#Get service and connect
+# Set up CSV
+
+# Get service and connect
 
 GALAXY_SERVICE_UUID = "32e61089-2b22-4db5-a914-43ce41986c70"
 GALAXY_CHAR_UUID    = "32e6108a-2b22-4db5-a914-43ce41986c70"
 
 try:
     print("connecting")
+    before_connecting_time = time.time()
     nRF = Peripheral(addr)
-
+    after_connecting_time = time.time()
     print("connected")
+    connection_time = after_connecting_time - before_connecting_time
+    print(connection_time)
 
     # Get service
     sv = nRF.getServiceByUUID(GALAXY_SERVICE_UUID)
     # Get characteristic
     ch = sv.getCharacteristics(GALAXY_CHAR_UUID)[0]
 
-    while True:
-        print(ch.read())
-        input("Press any key to get sensor data")
-        led_state = bool(int(ch.read().hex()))
-        #ch.write(bytes([not led_state]))
+    # Save 10 data packets 
+    count = 0
+    all_data = []
+    while (count < 10):
+        value = ch.read()
+        print(ord(value[0]))
+        data = ord(value[0])
+        count+=1
+
+        #TODO: Save data to data buffer 
+        all_data += [[count,data]]
+
+    # setup and write CSV
+    csv_headers = ['count','data']
+    filename = "nRf_data.csv"
+
+    print(all_data)
+
+    with open(filename,'w') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(csv_headers)
+        csvwriter.writerows(all_data)
+
 finally:
     nRF.disconnect()
 
