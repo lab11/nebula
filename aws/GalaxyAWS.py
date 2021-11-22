@@ -87,6 +87,9 @@ def on_message_received(topic, payload, dup, qos, retain, **kwargs):
 
 if __name__ == '__main__':
     # Spin up resources
+
+    start_connection = time.time()
+
     event_loop_group = io.EventLoopGroup(1)
     host_resolver = io.DefaultHostResolver(event_loop_group)
     client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)
@@ -134,6 +137,8 @@ if __name__ == '__main__':
     connect_future.result()
     print("Connected!")
 
+    after_connected_time = time.time()
+
     # Subscribe
     print("Subscribing to topic '{}'...".format(args.topic))
     subscribe_future, packet_id = mqtt_connection.subscribe(
@@ -162,6 +167,7 @@ if __name__ == '__main__':
             #message_json = message_json.replace("'",'"') #replace quotes hack
             print(message)
             print(message_json)
+            print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
             mqtt_connection.publish(
                 topic=args.topic,
                 payload= message_json, #json.loads(message_json),
@@ -182,3 +188,8 @@ if __name__ == '__main__':
     disconnect_future = mqtt_connection.disconnect()
     disconnect_future.result()
     print("Disconnected!")
+
+    end_time = time.time()
+
+    print("Connection time ", after_connected_time-start_connection)
+    print("Data transfer time ", end_time-after_connected_time)
