@@ -10,6 +10,7 @@ import time
 import csv
 from uuid import uuid4
 import json
+from multiprocessing import Pool 
 
 # This sample uses the Message Broker for AWS IoT to send and receive messages
 # through an MQTT connection. On startup, the device connects to the server,
@@ -84,6 +85,25 @@ def on_message_received(topic, payload, dup, qos, retain, **kwargs):
     received_count += 1
     if received_count == args.count:
         received_all_event.set()
+
+#parallel execution of mqtt client 
+def parallel_mqtt(msg):
+    message_json = json.dumps(msg)
+    print(message_json)
+    #print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
+    published = mqtt_connection.publish(
+        topic=args.topic,
+        payload= message_json, #json.loads(message_json),
+        qos=mqtt.QoS.AT_LEAST_ONCE)
+    published[0].result()
+    print(type(published[0]))
+    print(type(published[1]))
+    #print("sleepy")
+    #time.sleep(10)
+    print("published")
+
+
+
 
 if __name__ == '__main__':
     # Spin up resources
@@ -160,18 +180,23 @@ if __name__ == '__main__':
 
         publish_count = 1
         while (publish_count <= args.count) or (args.count == 0):
-            message = json.loads(args.message)#"{}".format(args.message) #args.message #"{} [{}]".format(args.message, publish_count)
+            messages = json.loads(args.message)#"{}".format(args.message) #args.message #"{} [{}]".format(args.message, publish_count)
             #import pdb; pdb.set_trace()
-            print("Publishing message to topic '{}': {}".format(args.topic, message))
-            message_json = json.dumps(message)
-            #message_json = message_json.replace("'",'"') #replace quotes hack
-            print(message)
-            print(message_json)
-            print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
-            mqtt_connection.publish(
-                topic=args.topic,
-                payload= message_json, #json.loads(message_json),
-                qos=mqtt.QoS.AT_LEAST_ONCE)
+            print("Publishing messages to topic '{}': {}".format(args.topic, messages))
+            #message_json = json.dumps(message)
+            #print(message)
+            #print(message_json)
+            #print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
+            #mqtt_connection.publish(
+            #    topic=args.topic,
+            #    payload= message_json, #json.loads(message_json),
+            #    qos=mqtt.QoS.AT_LEAST_ONCE)
+            pool = Pool(processes=1)
+            pool.map(parallel_mqtt,messages)
+            pool.close()
+            #for msg in messages:
+            #    parallel_mqtt(msg)
+
             time.sleep(1)
             publish_count += 1
 
