@@ -1,9 +1,13 @@
 import os
 import csv
+import pandas as pd
 import json
 import sys
 import time
 from multiprocessing import Pool
+
+#select True to run express code, select False to run plaintext 
+RUN_EXPRESS = False
 
 #parallel processing function
 def parallel_mqtt(msg):
@@ -13,8 +17,6 @@ def parallel_mqtt(msg):
     print(command)
     os.system(command)
 
-#start timing 
-start_time = time.time()
 
 #pull in data from nRF board 
 data_from_csv = []
@@ -28,16 +30,39 @@ with open('nRf_data.csv', 'r') as csvfile:
 #initialize test data (bytes didn't work, so deal with that later)
 test_data = os.urandom(128)
 
-#TODO import interactions csv 
-
-#TODO organize data by mules into messages 
-
-
-#TODO if plaintext sort by time 
-
-#TODO else express sort by time sent 
+#import schedule csv 
+#header:'sensor_id', 'mule_id', 'sample_time', 'pickup_time', 'batch_time', 'data_length'
+schedule_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/schedule.csv', skiprows=3)
 
 
+#start timing
+start_time = time.time()
+
+if RUN_EXPRESS == False:
+    schedule_csv.sort_values(["pickup_time"],axis=0,inplace=True)
+    print(schedule_csv.head(50))
+    #TODO send messages in parallel for each pickup time
+    #each mule_id within a pickup time makes own data packet with sensor ids and data 
+elif RUN_EXPRESS == True:
+    schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
+    print(schedule_csv.head(10))
+    #TODO call Express binary with data 
+
+#exit()
+'''
+schedule_csv = []
+with open('../simulation/probabilistic_routing/prob_data/schedule.csv') as csvfile:
+    csvreader = csv.reader(csvfile)
+    for i,row in enumerate(csvreader):
+        if (i < 10) & (i >= 3):
+            schedule_csv.append(row)
+print(schedule_csv)
+print(schedule_csv[0])
+print(schedule_csv[1][0])
+exit()
+
+#prob/schedule
+'''
 sensor_id = 0
 mule_id = 1
 
