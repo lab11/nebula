@@ -80,7 +80,7 @@ def on_resubscribe_complete(resubscribe_future):
 
 # Callback when the subscribed topic receives a message
 def on_message_received(topic, payload, dup, qos, retain, **kwargs):
-    print("Received message from topic '{}': {}".format(topic, payload))
+    #print("Received message from topic '{}': {}".format(topic, payload))
     global received_count
     received_count += 1
     if received_count == args.count:
@@ -141,6 +141,7 @@ if __name__ == '__main__':
     after_connected_time = time.time()
 
     # Subscribe
+    '''
     print("Subscribing to topic '{}'...".format(args.topic))
     subscribe_future, packet_id = mqtt_connection.subscribe(
         topic=args.topic,
@@ -149,6 +150,7 @@ if __name__ == '__main__':
 
     subscribe_result = subscribe_future.result()
     print("Subscribed with {}".format(str(subscribe_result['qos'])))
+    '''
 
     # Publish message to server desired number of times.
     # This step is skipped if message is blank.
@@ -175,11 +177,13 @@ if __name__ == '__main__':
 
     # Wait for all messages to be received.
     # This waits forever if count was set to 0.
+    '''
     if args.count != 0 and not received_all_event.is_set():
         print("Waiting for all messages to be received...")
 
     received_all_event.wait()
     print("{} message(s) received.".format(received_count))
+    '''
 
     # Disconnect
     print("Disconnecting...")
@@ -189,5 +193,5 @@ if __name__ == '__main__':
 
     end_time = time.time()
 
-    print("Connection time ", after_connected_time-start_connection)
-    print("Data transfer time ", end_time-after_connected_time)
+    #print("Connection time ", after_connected_time-start_connection)
+    #print("Data transfer time ", end_time-after_connected_time)
