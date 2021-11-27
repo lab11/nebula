@@ -75,7 +75,8 @@ void addAddr(int index, uint8_t *rowId){
 void prepQuery(int threadNum, int localIndex, uint8_t *dataToWrite, int dataSize, int *querySize, uint8_t **dpfQueryA, uint8_t **dpfQueryB){
 
     if(dataSize > db[localIndex].dataSize) {
-        printf("dataSize too big for this entry\n");
+        printf("local index %d\n", localIndex);
+        printf("dataSize too big for this entry (%d vs %d)\n", dataSize, db[localIndex].dataSize);
     }
     
     *querySize = 1 + 16 + 1 + 18 * 128 + dataSize;

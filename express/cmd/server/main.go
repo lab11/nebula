@@ -171,7 +171,7 @@ func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP 
 			log.Fatal("got unexpected connection type", connType)
 		}
 
-		log.Printf("%v done\n", threadId)
+		log.Printf("[%v] done\n", threadId)
 	}
 }
 
@@ -231,6 +231,8 @@ func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, foll
 		var clientAuditInputB []byte
 
 		go func() {
+			writeBytesToConn(serverConn, intToByte(WRITE)[0:1])
+
 			msg := append(intToByte(dataTransferSize), intToByte(dataSize)...)
 			msg = append(msg, seed[:]...)
 			msg = append(msg, clientInput...)
@@ -270,11 +272,11 @@ func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, foll
 		auditResp := int(C.serverVerifyProof(getPtrToBuffer(ansA, 0), getPtrToBuffer(ansB, 4)))
 
 		if byteToInt(ansB[:4]) == 0 {
-			log.Fatal("audit failed on server B")
+			log.Println("audit failed on server B")
 		}
 
 		if auditResp == 0 {
-			log.Fatal("audit failed")
+			log.Println("audit failed")
 		}
 
 	} else { // follower
@@ -310,7 +312,7 @@ func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, foll
 		auditResp := int(C.serverVerifyProof(getPtrToBuffer(ansA, 0), getPtrToBuffer(ansB, 0)))
 
 		if auditResp == 0 {
-			log.Fatal("audit failed")
+			log.Println("audit failed")
 		}
 
 		auditOutputs := append(intToByte(auditResp), ansB...)

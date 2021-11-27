@@ -11,3 +11,9 @@ server:
 client:
 	CC=$(CC) go build ./cmd/client 
 
+.PHONY: clean
+clean:
+	go clean -cache -testcache ./cmd/server
+	go clean -cache -testcache ./cmd/client
+	rm client server
+
