@@ -55,11 +55,14 @@ func main() {
 
 	flag.Parse()
 
+	log.Printf("starting server (leader=%v) at %v with %v %v-byte mailboxes...\n\texpecting other server at %v\n",
+		leader, leaderIP, numRows, dataSize, followerIP)
+
 	// init backing table
 	C.initializeServer(C.int(numThreads))
 
 	// init TLS server
-	cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
+	cert, err := tls.LoadX509KeyPair("pkg/server.crt", "pkg/server.key")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -136,32 +139,22 @@ func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP 
 		db[i] = make([]byte, int(C.db[i].dataSize))
 	}
 
-	conf := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-
-	// set up a connection with the other server (leader->follower or follower->leader)
-	var serverConn net.Conn = nil
-	if leader {
-		c, err := tls.Dial("tcp", followerIP, conf)
-		if err != nil {
-			log.Fatal(err)
-		}
-		serverConn = c
-	}
-
 	for {
 		// pick up a connection to handle
+		log.Printf("[%v] waiting for connection\n", threadId)
 		conn := <-conns
+		log.Printf("[%v] handling incoming connection...", threadId)
 		connType := byteToInt(readBytesFromConn(conn, 1))
 
 		switch connType {
 		case NEW_ROW:
+			log.Printf("[%v] handling NEW_ROW\n", threadId)
 			dbMutex.Lock()
 			handleNewRow(threadId, conn, leader, leaderIP, followerIP)
 			dbMutex.Unlock()
 
 		case WRITE:
+			log.Printf("[%v] handling WRITE\n", threadId)
 			dbMutex.RLock()
 			newSize := int(C.dbSize)
 			if dbSize != newSize { // add new rows if necessary
@@ -172,11 +165,13 @@ func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP 
 			dbSize = newSize
 			dbMutex.RUnlock()
 
-			handleWrite(threadId, conn, leader, leaderIP, followerIP, dbSize, db, serverConn, clientPublicKey, s2SecretKey)
+			handleWrite(threadId, conn, leader, leaderIP, followerIP, dbSize, db, clientPublicKey, s2SecretKey)
 
 		default:
 			log.Fatal("got unexpected connection type", connType)
 		}
+
+		log.Printf("%v done\n", threadId)
 	}
 }
 
@@ -198,8 +193,7 @@ func handleNewRow(threadId int, conn net.Conn, leader bool, leaderIP string, fol
 	}
 }
 
-func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, followerIP string, dbSize int, db [][]byte,
-	serverConn net.Conn, clientPublicKey, s2SecretKey *[32]byte) {
+func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, followerIP string, dbSize int, db [][]byte, clientPublicKey, s2SecretKey *[32]byte) {
 
 	vector := make([]byte, dbSize*16)
 
@@ -207,13 +201,23 @@ func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, foll
 	dataSize := byteToInt(readBytesFromConn(conn, 4))
 
 	if leader {
+
+		conf := &tls.Config{
+			InsecureSkipVerify: true,
+		}
+
+		serverConn, err := tls.Dial("tcp", followerIP, conf)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		input := readBytesFromConn(conn, dataTransferSize)
 
 		clientInputSize := 24 + dataTransferSize + box.Overhead
 		clientInput := readBytesFromConn(conn, clientInputSize)
 
 		var seed [16]byte
-		_, err := rand.Read(seed[:])
+		_, err = rand.Read(seed[:])
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -331,9 +335,13 @@ func applyDPF(dbSize int, db [][]byte, threadId int, query []byte, vector []byte
 
 func readBytesFromConn(conn net.Conn, n int) []byte {
 	payload := make([]byte, n)
-	nRead, err := conn.Read(payload)
-	if err != nil || nRead != n {
-		log.Fatal(err, n)
+	for count := 0; count < n; {
+		nRead, err := conn.Read(payload[count:])
+		count += nRead
+		//log.Printf("read %v bytes\n", count)
+		if err != nil && count != n {
+			log.Fatal(err, n, count)
+		}
 	}
 
 	return payload
@@ -341,7 +349,7 @@ func readBytesFromConn(conn net.Conn, n int) []byte {
 
 func writeBytesToConn(conn net.Conn, payload []byte) {
 	nWritten, err := conn.Write(payload)
-	if err != nil {
+	if err != nil || nWritten != len(payload) {
 		log.Fatal(err, nWritten)
 	}
 }

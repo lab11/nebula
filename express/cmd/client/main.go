@@ -1,15 +1,16 @@
 // Heavily based on Express evaluation code @ https://github.com/SabaEskandarian/Express
 //   - see also: https://www.usenix.org/system/files/sec21-eskandarian.pdf
+//   - original source code based on denji/golang-tls
 
 package main
 
 /*
-#cgo CFLAGS: -fopenmp -O2 -I/usr/local/include
-#cgo LDFLAGS: -lcrypto -lm -fopenmp -L/usr/local/lib
-#include "../c/dpf.h"
-#include "../c/okv.h"
-#include "../c/dpf.c"
-#include "../c/okv.c"
+#cgo CFLAGS: -O2 -I/usr/local/include
+#cgo LDFLAGS: -lcrypto -lm -L/usr/local/lib
+#include "../../pkg/dpf.h"
+#include "../../pkg/okvClient.h"
+#include "../../pkg/dpf.c"
+#include "../../pkg/okvClient.c"
 */
 import "C"
 import (
@@ -24,9 +25,9 @@ import (
 	//	"os"
 	//	"strconv"
 	"strings"
-	"sync"
-	"time"
-	"unsafe"
+	//"sync"
+	//"time"
+	//"unsafe"
 )
 
 // connection message types
@@ -40,300 +41,107 @@ func main() {
 	log.SetFlags(log.Lshortfile)
 
 	// parse configuration
-	var leader bool
-	var leaderIP, followerIP string
-	var numRows int
-	var dataSize int
-	var numThreads int
+	var leaderIP string
+	var followerIP string
+	var dataSize, numThreads int
 
-	flag.BoolVar(&leader, "leader", false, "set server as primary (e.g. serverA) that communicates with clients")
-	flag.StringVar(&leaderIP, "leaderIP", "localhost:4442", "IP:port of leader server (A)")
-	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of follower server (B)")
-	flag.IntVar(&numRows, "numRows", 1000, "number of total mailbox rows")
+	flag.StringVar(&leaderIP, "leaderIP", "localhost:4442", "IP:port of primary leader server")
+	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of secondary follower server")
 	flag.IntVar(&dataSize, "dataSize", 1024, "size of each mailbox")
-	flag.IntVar(&numThreads, "numThreads", 8, "number of threads to handle writes")
+	flag.IntVar(&numThreads, "numThreads", 8, "number of client threads")
 
 	flag.Parse()
 
-	// init backing table
-	C.initializeServer(C.int(numThreads))
-
-	// init TLS server
-	cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	config := &tls.Config{Certificates: []tls.Certificate{cert}}
-	port := ":"
-	if leader {
-		port += strings.Split(leaderIP, ":")[1]
-	} else {
-		port += strings.Split(followerIP, ":")[1]
-	}
-
-	listener, err := tls.Listen("tcp", port, config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer listener.Close()
-
-	// XXX
-	// using a deterministic randomness source so everyone shares a key. not for real use
-	clientPublicKey, _, err := box.GenerateKey(strings.NewReader(strings.Repeat("c", 10000)))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, s2SecretKey, err := box.GenerateKey(strings.NewReader(strings.Repeat("b", 10000)))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// before we start dealing with client connections, let's set up a number
-	// of unused rows to pad out database
-	addUnusedRows(numRows, dataSize)
-
-	var dbMutex sync.RWMutex
-
-	// set up a channel of connections waiting to be processed, and let our
-	// worker threads deal with them one at a time
-	conns := make(chan net.Conn)
-	for i := 0; i < numThreads; i++ {
-		go connectionHandler(i, conns, leader, leaderIP, followerIP, dbMutex, clientPublicKey, s2SecretKey)
-	}
-
-	// main loop: accept network connections and queue them for workers
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		conn.SetDeadline(time.Time{})
-
-		conns <- conn
-	}
-}
-
-func addUnusedRows(numRows int, dataSize int) {
-	for i := 0; i < numRows; i++ {
-		var unusedRowKey [16]byte
-		_, err := rand.Read(unusedRowKey[:])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		C.processnewEntry(C.int(dataSize), getPtrToBuffer(unusedRowKey[:], 0))
-	}
-}
-
-func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP string, followerIP string, dbMutex sync.RWMutex,
-	clientPublicKey, s2SecretKey *[32]byte) {
-
-	dbSize := int(C.dbSize)
-	db := make([][]byte, dbSize)
-	for i := 0; i < dbSize; i++ {
-		db[i] = make([]byte, int(C.db[i].dataSize))
-	}
+	log.Printf("starting client for %v-byte messages...\n\texpecting servers at %v and %v\n",
+		dataSize, leaderIP, followerIP)
 
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
 
-	// set up a connection with the other server (leader->follower or follower->leader)
-	var serverConn net.Conn = nil
-	if leader {
-		c, err := tls.Dial("tcp", followerIP, conf)
-		if err != nil {
-			log.Fatal(err)
-		}
-		serverConn = c
+	C.initializeClient(C.int(numThreads))
+
+	// XXX using deterministic keys for testing
+	_, clientSecretKey, err := box.GenerateKey(strings.NewReader(strings.Repeat("c", 10000)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	s2PublicKey, _, err := box.GenerateKey(strings.NewReader(strings.Repeat("b", 10000)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	auditorPublicKey, _, err := box.GenerateKey(strings.NewReader(strings.Repeat("a", 10000)))
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	for {
-		// pick up a connection to handle
-		conn := <-conns
-		connType := byteToInt(readBytesFromConn(conn, 1))
+	// XXX
+	_ = clientSecretKey
+	_ = s2PublicKey
+	_ = auditorPublicKey
 
-		switch connType {
-		case NEW_ROW:
-			dbMutex.Lock()
-			handleNewRow(threadId, conn, leader, leaderIP, followerIP)
-			dbMutex.Unlock()
-
-		case WRITE:
-			dbMutex.RLock()
-			newSize := int(C.dbSize)
-			if dbSize != newSize { // add new rows if necessary
-				for i := 0; i < int(C.dbSize)-dbSize; i++ {
-					db = append(db, make([]byte, int(C.db[i].dataSize)))
-				}
-			}
-			dbSize = newSize
-			dbMutex.RUnlock()
-
-			handleWrite(threadId, conn, leader, leaderIP, followerIP, dbSize, db, serverConn, clientPublicKey, s2SecretKey)
-
-		default:
-			log.Fatal("got unexpected connection type", connType)
-		}
+	connLeader, err := tls.Dial("tcp", leaderIP, conf)
+	if err != nil {
+		log.Fatal(err)
 	}
+	log.Printf("connected to leader server\n")
+
+	connFollower, err := tls.Dial("tcp", followerIP, conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("connected to follower server\n")
+
+	// Example 1 - add a new mailbox to the database, talking to both servers
+
+	// generate a random mailbox key
+	var newRowKey [16]byte
+	_, err = rand.Read(newRowKey[:])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	idx, addr := addRow(connLeader, connFollower, newRowKey, dataSize)
+	log.Printf("added new mailbox at index %v, addr %v\n", idx, addr)
+
+	connLeader.Close()
+	connFollower.Close()
 }
 
-func handleNewRow(threadId int, conn net.Conn, leader bool, leaderIP string, followerIP string) {
+func addRow(connLeader, connFollower net.Conn, newRowKey [16]byte, dataSize int) (int, []byte) {
 
-	numNewRows := byteToInt(readBytesFromConn(conn, 4))
-	dataSize := byteToInt(readBytesFromConn(conn, 4))
+	// tell servers we're adding a new row
+	writeBytesToConn(connLeader, intToByte(NEW_ROW)[0:1])
+	writeBytesToConn(connFollower, intToByte(NEW_ROW)[0:1])
 
-	for i := 0; i < numNewRows; i++ {
-		newRowKey := readBytesFromConn(conn, 16)
-		newIndex := int(C.processnewEntry(C.int(dataSize), getPtrToBuffer(newRowKey, 0)))
+	// tell servers we just want to add one entry
+	writeBytesToConn(connLeader, intToByte(1))
+	writeBytesToConn(connFollower, intToByte(1))
 
-		// if this server is the leader, send the new index (phy addr) and row
-		// id (virt addr) back to client
-		if leader {
-			writeBytesToConn(conn, intToByte(newIndex))
-			writeBytesToConn(conn, C.GoBytes(unsafe.Pointer(C.tempRowId), 16))
-		}
-	}
-}
+	// send row size
+	writeBytesToConn(connLeader, intToByte(dataSize))
+	writeBytesToConn(connFollower, intToByte(dataSize))
 
-func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, followerIP string, dbSize int, db [][]byte,
-	serverConn net.Conn, clientPublicKey, s2SecretKey *[32]byte) {
+	// send row key
+	writeBytesToConn(connLeader, newRowKey[:])
+	writeBytesToConn(connFollower, newRowKey[:])
 
-	vector := make([]byte, dbSize*16)
+	mailboxIdx := byteToInt(readBytesFromConn(connLeader, 4))
+	mailboxAddr := readBytesFromConn(connLeader, 16)
 
-	dataTransferSize := byteToInt(readBytesFromConn(conn, 4))
-	dataSize := byteToInt(readBytesFromConn(conn, 4))
-
-	if leader {
-		input := readBytesFromConn(conn, dataTransferSize)
-
-		clientInputSize := 24 + dataTransferSize + box.Overhead
-		clientInput := readBytesFromConn(conn, clientInputSize)
-
-		var seed [16]byte
-		_, err := rand.Read(seed[:])
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		waitForClient := make(chan int)
-		waitForServer := make(chan int)
-
-		clientDataSize := 160
-		clientDataSizeB := 24 + box.Overhead + 160
-		var clientAuditInput []byte
-		var clientAuditInputB []byte
-
-		go func() {
-			msg := append(intToByte(dataTransferSize), intToByte(dataSize)...)
-			msg = append(msg, seed[:]...)
-			msg = append(msg, clientInput...)
-
-			writeBytesToConn(serverConn, msg)
-
-			waitForServer <- 1
-		}()
-
-		go func() {
-			writeBytesToConn(conn, seed[:])
-
-			clientAuditInput = readBytesFromConn(conn, clientDataSize)
-			clientAuditInputB = readBytesFromConn(conn, clientDataSizeB)
-
-			waitForClient <- 1
-		}()
-
-		applyDPF(dbSize, db, threadId, input, vector)
-
-		// XXX didn't try to decompose cause it's getting late
-		mVal := make([]byte, 16)
-		cVal := make([]byte, 16)
-		C.serverSetupProof(C.ctx[threadId], getPtrToBuffer(seed[:], 0), C.dbSize, getPtrToBuffer(vector, 0), getPtrToBuffer(mVal, 0), getPtrToBuffer(cVal, 0))
-
-		<-waitForClient
-
-		ansA := make([]byte, 96)
-		C.serverComputeQuery(C.ctx[threadId], getPtrToBuffer(seed[:], 0), getPtrToBuffer(mVal, 0), getPtrToBuffer(cVal, 0), getPtrToBuffer(clientAuditInput, 0), getPtrToBuffer(ansA, 0))
-
-		<-waitForServer
-
-		writeBytesToConn(serverConn, clientAuditInputB)
-		writeBytesToConn(serverConn, ansA)
-
-		ansB := readBytesFromConn(serverConn, 100)
-		auditResp := int(C.serverVerifyProof(getPtrToBuffer(ansA, 0), getPtrToBuffer(ansB, 4)))
-
-		if byteToInt(ansB[:4]) == 0 {
-			log.Fatal("audit failed on server B")
-		}
-
-		if auditResp == 0 {
-			log.Fatal("audit failed")
-		}
-
-	} else { // follower
-		seed := readBytesFromConn(conn, 16)
-
-		clientInputSize := 24 + dataTransferSize + box.Overhead
-		clientInput := readBytesFromConn(conn, clientInputSize)
-
-		// unbox query
-		var decryptNonce [24]byte
-		copy(decryptNonce[:], clientInput[:24])
-		decryptedQuery, ok := box.Open(nil, clientInput[24:], &decryptNonce, clientPublicKey, s2SecretKey)
-		if !ok {
-			log.Fatal("decryption not ok!")
-		}
-
-		applyDPF(dbSize, db, threadId, decryptedQuery, vector)
-
-		mVal := make([]byte, 16)
-		cVal := make([]byte, 16)
-		C.serverSetupProof(C.ctx[threadId], getPtrToBuffer(seed, 0), C.dbSize, getPtrToBuffer(vector, 0), getPtrToBuffer(mVal, 0), getPtrToBuffer(cVal, 0))
-
-		proofBox := readBytesFromConn(conn, 24+160+box.Overhead)
-		copy(decryptNonce[:], proofBox[:24])
-		proof, ok := box.Open(nil, proofBox[24:], &decryptNonce, clientPublicKey, s2SecretKey)
-		if !ok {
-			log.Fatal("decryption not ok!")
-		}
-
-		ansA := readBytesFromConn(conn, 96)
-		ansB := make([]byte, 96)
-		C.serverComputeQuery(C.ctx[threadId], getPtrToBuffer(seed, 0), getPtrToBuffer(mVal, 0), getPtrToBuffer(cVal, 0), getPtrToBuffer(proof, 0), getPtrToBuffer(ansB, 0))
-		auditResp := int(C.serverVerifyProof(getPtrToBuffer(ansA, 0), getPtrToBuffer(ansB, 0)))
-
-		if auditResp == 0 {
-			log.Fatal("audit failed")
-		}
-
-		auditOutputs := append(intToByte(auditResp), ansB...)
-		writeBytesToConn(conn, auditOutputs)
-	}
-}
-
-func applyDPF(dbSize int, db [][]byte, threadId int, query []byte, vector []byte) {
-
-	for i := 0; i < dbSize; i++ {
-		ds := int(C.db[i].dataSize)
-		dataShare := make([]byte, ds)
-		v := C.evalDPF(C.ctx[threadId], getPtrToBuffer(query, 0), C.db[i].rowID, C.int(ds), getPtrToBuffer(dataShare, 0))
-		copy(vector[i*16:(i+1)*16], C.GoBytes(unsafe.Pointer(&v), 16))
-		for j := 0; j < ds; j++ {
-			db[i][j] = db[i][j] ^ dataShare[j]
-		}
-	}
+	return mailboxIdx, mailboxAddr
 }
 
 /* Utility functions */
 
 func readBytesFromConn(conn net.Conn, n int) []byte {
 	payload := make([]byte, n)
-	nRead, err := conn.Read(payload)
-	if err != nil || nRead != n {
-		log.Fatal(err, n)
+	for count := 0; count < n; {
+		nRead, err := conn.Read(payload[count:])
+		count += nRead
+		if err != nil && count != n {
+			log.Fatal(err, n, count)
+		}
 	}
 
 	return payload
@@ -341,7 +149,7 @@ func readBytesFromConn(conn net.Conn, n int) []byte {
 
 func writeBytesToConn(conn net.Conn, payload []byte) {
 	nWritten, err := conn.Write(payload)
-	if err != nil {
+	if err != nil || nWritten != len(payload) {
 		log.Fatal(err, nWritten)
 	}
 }

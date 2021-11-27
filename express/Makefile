@@ -1,8 +1,13 @@
 
+CC=gcc-11
+
 all: server client
 
+.PHONY: server
 server:
-	go build ./cmd/server
+	CC=$(CC) go build ./cmd/server 
 
+.PHONY: client
 client:
-	go build ./cmd/client
+	CC=$(CC) go build ./cmd/client 
+
