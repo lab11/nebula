@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import sys
 import time
+import subprocess
 import numpy as np
 from multiprocessing import Pool
 
@@ -76,6 +77,9 @@ elif RUN_EXPRESS == True:
     schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
     print(schedule_csv.head(10))
 
+    #TODO open express subprocess pipe 
+    #express = subprocess.Popen(['test', 'to express command'],stdin=subprocess.PIPE,stout=subprocess.PIPE)
+
     #get the unique pickup time
     unique_pickup_time = schedule_csv.pickup_time.unique()
 
@@ -95,7 +99,8 @@ elif RUN_EXPRESS == True:
             }          
             msgs.append(msg)
 
-    #TODO call Express binary with data 
+        #TODO call Express binary with data for each pickup time
+        #express.communicate("")
 
 elif RUN_RAMP_WL == True:
     #loop through to make message arrays of increasing size
