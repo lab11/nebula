@@ -14,16 +14,18 @@ package main
 */
 import "C"
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"flag"
-	//	"fmt"
+	"fmt"
 	"golang.org/x/crypto/nacl/box"
 	//	"io"
 	"log"
 	"net"
-	//	"os"
-	//	"strconv"
+	"os"
+	"strconv"
 	"strings"
 	//"sync"
 	//"time"
@@ -79,14 +81,45 @@ func main() {
 	}
 	_ = auditorPublicKey
 
-	// Example 1 - add a new mailbox to the database, talking to both servers
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		input, _ := reader.ReadString('\n')
+		words := strings.Fields(input)
 
-	idx, addr := addRow(leaderIP, followerIP, dataSize)
-	log.Printf("added new mailbox at index %v, addr %v\n", idx, addr)
+		switch words[0] {
+		case "0": // new mailbox, no other inputs
+			go func() {
+				idx, addr := addRow(leaderIP, followerIP, dataSize)
+				// print <local id> <virtual address>
+				fmt.Printf("%v %v\n", idx, hex.EncodeToString(addr))
+			}()
+		case "1": // mailbox write, <local id> <payload>
+			if len(words) != 3 {
+				log.Println("expected write format `1 <32-bit row id> <1024 byte payload hex string>`, but got this many arguments:", len(words))
+				continue
+			}
 
-	// Example 2 - make a write to the new mailbox
-	data := make([]byte, dataSize)
-	writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
+			go func() {
+				data := make([]byte, dataSize)
+				payload_bytes, err := hex.DecodeString(words[2])
+				if err != nil {
+					log.Println("error:", err)
+					return
+				}
+				copy(data, payload_bytes)
+
+				idx, _ := strconv.Atoi(words[1])
+				if err != nil {
+					log.Println("error:", err)
+					return
+				}
+				writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
+			}()
+		default:
+			log.Printf("warning: got unexpected input operation code %s\n", words[0])
+			continue
+		}
+	}
 }
 
 func writeRow(localIndex int, data []byte, serverIP string, s2PublicKey, clientSecretKey *[32]byte) {

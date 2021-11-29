@@ -374,8 +374,10 @@ uint128_t evalDPF(EVP_CIPHER_CTX *ctx, unsigned char* k, uint128_t x, int dataSi
     EVP_CIPHER_CTX *seedCtx;
     if(!(seedCtx = EVP_CIPHER_CTX_new())) 
         printf("errors occured in creating context\n");
-    if(1 != EVP_EncryptInit_ex(seedCtx, EVP_aes_128_ctr(), NULL, (uint8_t*)&s[maxLayer], NULL))
+    if(1 != EVP_EncryptInit_ex(seedCtx, EVP_aes_128_ctr(), NULL, (uint8_t*)&s[maxLayer], NULL)) {
         printf("errors occured in init of dpf eval\n");
+        printf("%s\n", ERR_error_string(ERR_get_error(), NULL));
+    }
     if(1 != EVP_EncryptUpdate(seedCtx, dataShare, &len, zeros, ((dataSize-1)|15)+1))
         printf("errors occured in encrypt\n");
     

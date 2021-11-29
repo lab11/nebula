@@ -49,7 +49,7 @@ func main() {
 	flag.BoolVar(&leader, "leader", false, "set server as primary (e.g. serverA) that communicates with clients")
 	flag.StringVar(&leaderIP, "leaderIP", "localhost:4442", "IP:port of leader server (A)")
 	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of follower server (B)")
-	flag.IntVar(&numRows, "numRows", 1000, "number of total mailbox rows")
+	flag.IntVar(&numRows, "numRows", 0, "number of mailbox rows to initialize")
 	flag.IntVar(&dataSize, "dataSize", 1024, "size of each mailbox")
 	flag.IntVar(&numThreads, "numThreads", 8, "number of threads to handle writes")
 
