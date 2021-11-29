@@ -11,6 +11,11 @@ import csv
 from uuid import uuid4
 import json
 
+# For memcached 
+from pymemcache.client import base
+
+
+
 # This sample uses the Message Broker for AWS IoT to send and receive messages
 # through an MQTT connection. On startup, the device connects to the server,
 # subscribes to a topic, and begins publishing messages to that topic.
@@ -39,6 +44,8 @@ parser.add_argument('--signing-region', default='us-east-1', help="If you specif
     "is the region that will be used for computing the Sigv4 signature")
 parser.add_argument('--proxy-host', help="Hostname of proxy to connect to.")
 parser.add_argument('--proxy-port', type=int, default=8080, help="Port of proxy to connect to.")
+parser.add_argument('--memcache-host', default='localhost')
+parser.add_argument('--memcache-port', type=int, default=11211)
 parser.add_argument('--verbosity', choices=[x.name for x in io.LogLevel], default=io.LogLevel.NoLogs.name,
     help='Logging level')
 
@@ -81,6 +88,9 @@ def on_resubscribe_complete(resubscribe_future):
 def on_message_received(topic, payload, dup, qos, retain, **kwargs):
     print("Received message from topic '{}': {}".format(topic, payload))
     global received_count
+    global memcachedb
+    memcachedb.put(topic, payload)
+    print("memcached Inserted '{}':'{}'".format(topic, payload))
     received_count += 1
     if received_count == args.count:
         received_all_event.set()
@@ -88,6 +98,9 @@ def on_message_received(topic, payload, dup, qos, retain, **kwargs):
 if __name__ == '__main__':
     # Spin up resources
 
+    # Start memcached
+    memcachedb = base.Client((args.memcache-host, args.memcache-port))
+    
     start_connection = time.time()
 
     event_loop_group = io.EventLoopGroup(1)
@@ -148,6 +161,9 @@ if __name__ == '__main__':
 
     subscribe_result = subscribe_future.result()
     print("Subscribed with {}".format(str(subscribe_result['qos'])))
+    # Writing to Memcached
+    memcachedb.set(args.topic, )
+
 
     # Publish message to server desired number of times.
     # This step is skipped if message is blank.
