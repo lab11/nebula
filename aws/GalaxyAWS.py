@@ -10,7 +10,11 @@ import time
 import csv
 from uuid import uuid4
 import json
-from multiprocessing import Pool 
+
+# For memcached 
+from pymemcache.client import base
+
+
 
 # This sample uses the Message Broker for AWS IoT to send and receive messages
 # through an MQTT connection. On startup, the device connects to the server,
@@ -40,6 +44,8 @@ parser.add_argument('--signing-region', default='us-east-1', help="If you specif
     "is the region that will be used for computing the Sigv4 signature")
 parser.add_argument('--proxy-host', help="Hostname of proxy to connect to.")
 parser.add_argument('--proxy-port', type=int, default=8080, help="Port of proxy to connect to.")
+parser.add_argument('--memcache-host', default='localhost')
+parser.add_argument('--memcache-port', type=int, default=11211)
 parser.add_argument('--verbosity', choices=[x.name for x in io.LogLevel], default=io.LogLevel.NoLogs.name,
     help='Logging level')
 
@@ -80,8 +86,13 @@ def on_resubscribe_complete(resubscribe_future):
 
 # Callback when the subscribed topic receives a message
 def on_message_received(topic, payload, dup, qos, retain, **kwargs):
-    #print("Received message from topic '{}': {}".format(topic, payload))
+    print("Received message from topic '{}': {}".format(topic, payload))
     global received_count
+    global memcachedb
+    memcachedb.set(topic, payload)
+    print("memcached Inserted '{}':'{}'".format(topic, payload))
+    # to read
+    # memcachedb.get(topic)
     received_count += 1
     if received_count == args.count:
         received_all_event.set()
@@ -89,6 +100,9 @@ def on_message_received(topic, payload, dup, qos, retain, **kwargs):
 if __name__ == '__main__':
     # Spin up resources
 
+    # Start memcached
+    memcachedb = base.Client(('localhost', 11211))
+    
     start_connection = time.time()
 
     event_loop_group = io.EventLoopGroup(1)
@@ -141,7 +155,6 @@ if __name__ == '__main__':
     after_connected_time = time.time()
 
     # Subscribe
-    '''
     print("Subscribing to topic '{}'...".format(args.topic))
     subscribe_future, packet_id = mqtt_connection.subscribe(
         topic=args.topic,
@@ -150,7 +163,8 @@ if __name__ == '__main__':
 
     subscribe_result = subscribe_future.result()
     print("Subscribed with {}".format(str(subscribe_result['qos'])))
-    '''
+
+
 
     # Publish message to server desired number of times.
     # This step is skipped if message is blank.
@@ -163,11 +177,14 @@ if __name__ == '__main__':
 
         publish_count = 1
         while (publish_count <= args.count) or (args.count == 0):
-            message = json.loads(args.message)
+            message = json.loads(args.message)#"{}".format(args.message) #args.message #"{} [{}]".format(args.message, publish_count)
             #import pdb; pdb.set_trace()
-            print("Publishing messages to topic '{}': {}".format(args.topic, message))
+            print("Publishing message to topic '{}': {}".format(args.topic, message))
             message_json = json.dumps(message)
-            #print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
+            #message_json = message_json.replace("'",'"') #replace quotes hack
+            print(message)
+            print(message_json)
+            print("Size of total message ", sys.getsizeof(message_json)+sys.getsizeof(args.topic)+sys.getsizeof(mqtt.QoS.AT_LEAST_ONCE))
             mqtt_connection.publish(
                 topic=args.topic,
                 payload= message_json, #json.loads(message_json),
@@ -177,13 +194,11 @@ if __name__ == '__main__':
 
     # Wait for all messages to be received.
     # This waits forever if count was set to 0.
-    '''
     if args.count != 0 and not received_all_event.is_set():
         print("Waiting for all messages to be received...")
 
     received_all_event.wait()
     print("{} message(s) received.".format(received_count))
-    '''
 
     # Disconnect
     print("Disconnecting...")
@@ -193,5 +208,5 @@ if __name__ == '__main__':
 
     end_time = time.time()
 
-    #print("Connection time ", after_connected_time-start_connection)
-    #print("Data transfer time ", end_time-after_connected_time)
+    print("Connection time ", after_connected_time-start_connection)
+    print("Data transfer time ", end_time-after_connected_time)
