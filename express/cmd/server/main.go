@@ -279,6 +279,9 @@ func handleWrite(threadId int, conn net.Conn, leader bool, leaderIP string, foll
 			log.Println("audit failed")
 		}
 
+		done := 1
+		writeBytesToConn(conn, intToByte(done))
+
 	} else { // follower
 		seed := readBytesFromConn(conn, 16)
 
