@@ -141,20 +141,20 @@ func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP 
 
 	for {
 		// pick up a connection to handle
-		log.Printf("[%v] waiting for connection\n", threadId)
+		//log.Printf("[%v] waiting for connection\n", threadId)
 		conn := <-conns
-		log.Printf("[%v] handling incoming connection...", threadId)
+		//log.Printf("[%v] handling incoming connection...", threadId)
 		connType := byteToInt(readBytesFromConn(conn, 1))
 
 		switch connType {
 		case NEW_ROW:
-			log.Printf("[%v] handling NEW_ROW\n", threadId)
+			log.Printf("[%v] NEW_ROW\n", threadId)
 			dbMutex.Lock()
 			handleNewRow(threadId, conn, leader, leaderIP, followerIP)
 			dbMutex.Unlock()
 
 		case WRITE:
-			log.Printf("[%v] handling WRITE\n", threadId)
+			log.Printf("[%v] WRITE\n", threadId)
 			dbMutex.RLock()
 			newSize := int(C.dbSize)
 			if dbSize != newSize { // add new rows if necessary
@@ -171,7 +171,7 @@ func connectionHandler(threadId int, conns chan net.Conn, leader bool, leaderIP 
 			log.Fatal("got unexpected connection type", connType)
 		}
 
-		log.Printf("[%v] done\n", threadId)
+		//log.Printf("[%v] done\n", threadId)
 	}
 }
 

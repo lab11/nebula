@@ -15,4 +15,4 @@ make -j
 
 * Client
 
-	`./client -dataSize 128 -leaderIP 34.205.45.52:4442 -followerIP 18.209.20.193:4443 -numExistingRows 0 -numThreads 52``
+	`./client -dataSize 128 -leaderIP 34.205.45.52:4442 -followerIP 18.209.20.193:4443 -numExistingRows 0 -numThreads 95``

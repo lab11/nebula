@@ -77,8 +77,17 @@ elif RUN_EXPRESS == True:
     schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
     print(schedule_csv.head(10))
 
-    # TODO IP addresses of servers
-    express = subprocess.Popen(['../express/client', '-numThreads', '95'],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+    EX_SERVER_A = '34.205.45.52:4442'
+    EX_SERVER_B = '18.209.20.193:4443'
+
+    express = subprocess.Popen([
+        '../express/client', 
+        '-dataSize', '128',
+        '-leaderIP', EX_SERVER_A,
+        '-followerIP', EX_SERVER_B,
+        '-numExistingRows', '0',
+        '-numThreads', '95'
+    ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
     # sleep to give express a chance to start up
     time.sleep(1)

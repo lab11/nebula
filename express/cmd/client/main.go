@@ -135,19 +135,19 @@ func worker(input chan string, leaderIP, followerIP string, dataSize int, s2Publ
 
 func writeRow(localIndex int, data []byte, serverIP string, s2PublicKey, clientSecretKey *[32]byte) {
 
-	log.Println("writing row")
+	//log.Println("writing row")
 
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
 
-	log.Println("dialing...")
+	//log.Println("dialing...")
 	serverConn, err := tls.Dial("tcp", serverIP, conf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer serverConn.Close()
-	log.Printf("connected to server\n")
+	//log.Printf("connected to server\n")
 
 	threadNum := 0
 
@@ -215,9 +215,9 @@ func writeRow(localIndex int, data []byte, serverIP string, s2PublicKey, clientS
 	C.free(unsafe.Pointer(dpfQueryA))
 	C.free(unsafe.Pointer(dpfQueryB))
 
-	log.Printf("waiting for done\n")
+	//log.Printf("waiting for done\n")
 	done := readBytesFromConn(serverConn, 4)
-	log.Printf("write done with code %v!\n", done)
+	//log.Printf("write done with code %v!\n", done)
 }
 
 func addRow(leaderIP, followerIP string, dataSize int) (int, []byte) {
