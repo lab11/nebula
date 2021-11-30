@@ -51,7 +51,7 @@ func main() {
 	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of secondary follower server")
 	flag.IntVar(&dataSize, "dataSize", 1024, "size of each mailbox")
 	flag.IntVar(&numThreads, "numThreads", 8, "number of client threads")
-	flag.IntVar(&numExistingRows, "numExistingRows", 1000, "number of existing rows on server")
+	flag.IntVar(&numExistingRows, "numExistingRows", 0, "number of existing rows on server")
 
 	flag.Parse()
 
@@ -81,40 +81,51 @@ func main() {
 	}
 	_ = auditorPublicKey
 
+	input_chan := make(chan string, numThreads)
+	for i := 0; i < numThreads; i++ {
+		go worker(input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		input, _ := reader.ReadString('\n')
-		words := strings.Fields(input)
+		input_chan <- input
+	}
+}
+
+func worker(input chan string, leaderIP, followerIP string, dataSize int, s2PublicKey, clientSecretKey *[32]byte) {
+
+	for {
+		input_str := <-input
+		words := strings.Fields(input_str)
 
 		switch words[0] {
 		case "0": // new mailbox, no other inputs
-			go func() {
-				idx, addr := addRow(leaderIP, followerIP, dataSize)
-				// print <local id> <virtual address>
-				fmt.Printf("%v %v\n", idx, hex.EncodeToString(addr))
-			}()
+			idx, addr := addRow(leaderIP, followerIP, dataSize)
+			// print <local id> <virtual address>
+			fmt.Printf("%v %v\n", idx, hex.EncodeToString(addr))
+
 		case "1": // mailbox write, <local id> <payload>
 			if len(words) != 3 {
 				log.Println("expected write format `1 <32-bit row id> <1024 byte payload hex string>`, but got this many arguments:", len(words))
 				continue
 			}
 
-			go func() {
-				data := make([]byte, dataSize)
-				payload_bytes, err := hex.DecodeString(words[2])
-				if err != nil {
-					log.Println("error:", err)
-					return
-				}
-				copy(data, payload_bytes)
+			data := make([]byte, dataSize)
+			payload_bytes, err := hex.DecodeString(words[2])
+			if err != nil {
+				log.Println("error:", err)
+				return
+			}
+			copy(data, payload_bytes)
 
-				idx, _ := strconv.Atoi(words[1])
-				if err != nil {
-					log.Println("error:", err)
-					return
-				}
-				writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
-			}()
+			idx, _ := strconv.Atoi(words[1])
+			if err != nil {
+				log.Println("error:", err)
+				return
+			}
+			writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
+
 		default:
 			log.Printf("warning: got unexpected input operation code %s\n", words[0])
 			continue
@@ -124,19 +135,19 @@ func main() {
 
 func writeRow(localIndex int, data []byte, serverIP string, s2PublicKey, clientSecretKey *[32]byte) {
 
-	log.Println("writing row")
+	//log.Println("writing row")
 
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
 
-	log.Println("dialing...")
+	//log.Println("dialing...")
 	serverConn, err := tls.Dial("tcp", serverIP, conf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer serverConn.Close()
-	log.Printf("connected to server\n")
+	//log.Printf("connected to server\n")
 
 	threadNum := 0
 
@@ -204,9 +215,10 @@ func writeRow(localIndex int, data []byte, serverIP string, s2PublicKey, clientS
 	C.free(unsafe.Pointer(dpfQueryA))
 	C.free(unsafe.Pointer(dpfQueryB))
 
-	log.Printf("waiting for done\n")
+	//log.Printf("waiting for done\n")
 	done := readBytesFromConn(serverConn, 4)
-	log.Printf("write done with code %v!\n", done)
+	//log.Printf("write done with code %v!\n", done)
+	_ = done
 }
 
 func addRow(leaderIP, followerIP string, dataSize int) (int, []byte) {
@@ -220,14 +232,14 @@ func addRow(leaderIP, followerIP string, dataSize int) (int, []byte) {
 		log.Fatal(err)
 	}
 	defer connLeader.Close()
-	log.Printf("connected to leader server\n")
+	//log.Printf("connected to leader server\n")
 
 	connFollower, err := tls.Dial("tcp", followerIP, conf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer connFollower.Close()
-	log.Printf("connected to follower server\n")
+	//log.Printf("connected to follower server\n")
 
 	rowAKey := (*C.uchar)(C.malloc(16))
 	rowBKey := (*C.uchar)(C.malloc(16))
