@@ -16,6 +16,11 @@ from pymemcache.client import base
 
 
 
+# For memcached 
+from pymemcache.client import base
+
+
+
 # This sample uses the Message Broker for AWS IoT to send and receive messages
 # through an MQTT connection. On startup, the device connects to the server,
 # subscribes to a topic, and begins publishing messages to that topic.
@@ -163,6 +168,9 @@ if __name__ == '__main__':
 
     subscribe_result = subscribe_future.result()
     print("Subscribed with {}".format(str(subscribe_result['qos'])))
+    # Writing to Memcached
+    memcachedb.set(args.topic, )
+
 
 
 
