@@ -81,43 +81,51 @@ func main() {
 	}
 	_ = auditorPublicKey
 
+	input_chan := make(chan string, numThreads)
+	for i := 0; i < numThreads; i++ {
+		go worker(input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		log.Println("waiting for input")
 		input, _ := reader.ReadString('\n')
-		log.Printf("input: %v\n", input)
-		words := strings.Fields(input)
-		log.Println("got input")
+		input_chan <- input
+	}
+}
+
+func worker(input chan string, leaderIP, followerIP string, dataSize int, s2PublicKey, clientSecretKey *[32]byte) {
+
+	for {
+		input_str := <-input
+		words := strings.Fields(input_str)
 
 		switch words[0] {
 		case "0": // new mailbox, no other inputs
-			go func() {
-				idx, addr := addRow(leaderIP, followerIP, dataSize)
-				// print <local id> <virtual address>
-				fmt.Printf("%v %v\n", idx, hex.EncodeToString(addr))
-			}()
+			idx, addr := addRow(leaderIP, followerIP, dataSize)
+			// print <local id> <virtual address>
+			fmt.Printf("%v %v\n", idx, hex.EncodeToString(addr))
+
 		case "1": // mailbox write, <local id> <payload>
 			if len(words) != 3 {
 				log.Println("expected write format `1 <32-bit row id> <1024 byte payload hex string>`, but got this many arguments:", len(words))
 				continue
 			}
 
-			go func() {
-				data := make([]byte, dataSize)
-				payload_bytes, err := hex.DecodeString(words[2])
-				if err != nil {
-					log.Println("error:", err)
-					return
-				}
-				copy(data, payload_bytes)
+			data := make([]byte, dataSize)
+			payload_bytes, err := hex.DecodeString(words[2])
+			if err != nil {
+				log.Println("error:", err)
+				return
+			}
+			copy(data, payload_bytes)
 
-				idx, _ := strconv.Atoi(words[1])
-				if err != nil {
-					log.Println("error:", err)
-					return
-				}
-				writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
-			}()
+			idx, _ := strconv.Atoi(words[1])
+			if err != nil {
+				log.Println("error:", err)
+				return
+			}
+			writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
+
 		default:
 			log.Printf("warning: got unexpected input operation code %s\n", words[0])
 			continue

@@ -30,7 +30,7 @@ with open('nRf_data.csv', 'r') as csvfile:
             data_from_csv.append(row[1])
 
 #initialize test data of 79 string characters which is 128 bytes
-test_data = "a"*79
+test_data = "a"*78
 
 #import schedule csv 
 #header:'sensor_id', 'mule_id', 'sample_time', 'pickup_time', 'batch_time', 'data_length'
@@ -99,11 +99,10 @@ elif RUN_EXPRESS == True:
 
     time.sleep(3)
 
-    print('starting sample time loop')
-    for sample_time in unique_pickup_time:
-        print('sample loop iteration')
+    print('starting transmissions')
+    for pickup_time in unique_pickup_time:
         #get a new df and unique mule_ids
-        data_to_send = schedule_csv.loc[schedule_csv['sample_time'] == sample_time]
+        data_to_send = schedule_csv.loc[schedule_csv['pickup_time'] == pickup_time]
         unique_mule_ids = data_to_send.mule_id.unique()
 
         #initialize msg array and loop through mule ids to populate msgs 
@@ -115,12 +114,10 @@ elif RUN_EXPRESS == True:
                 "sensor_id":message_data['sensor_id'].to_numpy().tolist(),
                 "data":test_data
             }          
-            print('appending message', msg)
             msgs.append(msg)
 
         # NOTE: express expects hex string payloads, so all a's work but not random strings
         for m in msgs:
-            print('sending', m)
             express.stdin.write('1 {} {}\n'.format(mule_id_map[m['mule_id']], m['data']))
             express.stdin.flush()
 
