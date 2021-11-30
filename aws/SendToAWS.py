@@ -9,9 +9,9 @@ import numpy as np
 from multiprocessing import Pool
 
 #select True to run express,plaintext,or workload 
-RUN_EXPRESS = False
+RUN_EXPRESS = True
 RUN_PLAINTEXT = False
-RUN_RAMP_WL = True
+RUN_RAMP_WL = False
 
 #parallel processing function
 def parallel_mqtt(msg):
@@ -77,13 +77,31 @@ elif RUN_EXPRESS == True:
     schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
     print(schedule_csv.head(10))
 
-    #TODO open express subprocess pipe 
-    #express = subprocess.Popen(['test', 'to express command'],stdin=subprocess.PIPE,stout=subprocess.PIPE)
+    # TODO IP addresses of servers
+    express = subprocess.Popen(['../express/client', '-numThreads', '95'],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+
+    # sleep to give express a chance to start up
+    time.sleep(1)
+
+    # add a new row for every mule id
+    print('adding a new row for every mule id')
+    mule_ids = schedule_csv.mule_id.unique()
+    mule_id_map = {}
+    for i, mule_id in enumerate(mule_ids):
+        # send signal for new row, we'll use index in the list as the local row index
+        express.stdin.write('0\n') 
+        express.stdin.flush()
+        # TODO read response but we don't need to right now
+        mule_id_map[mule_id] = i
 
     #get the unique pickup time
     unique_pickup_time = schedule_csv.pickup_time.unique()
 
+    time.sleep(3)
+
+    print('starting sample time loop')
     for sample_time in unique_pickup_time:
+        print('sample loop iteration')
         #get a new df and unique mule_ids
         data_to_send = schedule_csv.loc[schedule_csv['sample_time'] == sample_time]
         unique_mule_ids = data_to_send.mule_id.unique()
@@ -97,10 +115,14 @@ elif RUN_EXPRESS == True:
                 "sensor_id":message_data['sensor_id'].to_numpy().tolist(),
                 "data":test_data
             }          
+            print('appending message', msg)
             msgs.append(msg)
 
-        #TODO call Express binary with data for each pickup time
-        #express.communicate("")
+        # NOTE: express expects hex string payloads, so all a's work but not random strings
+        for m in msgs:
+            print('sending', m)
+            express.stdin.write('1 {} {}\n'.format(mule_id_map[m['mule_id']], m['data']))
+            express.stdin.flush()
 
 elif RUN_RAMP_WL == True:
     #loop through to make message arrays of increasing size

@@ -51,7 +51,7 @@ func main() {
 	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of secondary follower server")
 	flag.IntVar(&dataSize, "dataSize", 1024, "size of each mailbox")
 	flag.IntVar(&numThreads, "numThreads", 8, "number of client threads")
-	flag.IntVar(&numExistingRows, "numExistingRows", 1000, "number of existing rows on server")
+	flag.IntVar(&numExistingRows, "numExistingRows", 0, "number of existing rows on server")
 
 	flag.Parse()
 
@@ -83,8 +83,11 @@ func main() {
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
+		log.Println("waiting for input")
 		input, _ := reader.ReadString('\n')
+		log.Printf("input: %v\n", input)
 		words := strings.Fields(input)
+		log.Println("got input")
 
 		switch words[0] {
 		case "0": // new mailbox, no other inputs
@@ -220,14 +223,14 @@ func addRow(leaderIP, followerIP string, dataSize int) (int, []byte) {
 		log.Fatal(err)
 	}
 	defer connLeader.Close()
-	log.Printf("connected to leader server\n")
+	//log.Printf("connected to leader server\n")
 
 	connFollower, err := tls.Dial("tcp", followerIP, conf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer connFollower.Close()
-	log.Printf("connected to follower server\n")
+	//log.Printf("connected to follower server\n")
 
 	rowAKey := (*C.uchar)(C.malloc(16))
 	rowBKey := (*C.uchar)(C.malloc(16))
