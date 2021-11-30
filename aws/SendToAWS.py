@@ -9,8 +9,8 @@ import numpy as np
 from multiprocessing import Pool
 
 #select True to run express,plaintext,or workload 
-RUN_EXPRESS = True
-RUN_PLAINTEXT = False
+RUN_EXPRESS = False
+RUN_PLAINTEXT = True
 RUN_RAMP_WL = False
 
 #parallel processing function
@@ -34,18 +34,18 @@ test_data = "a"*78
 
 #import schedule csv 
 #header:'sensor_id', 'mule_id', 'sample_time', 'pickup_time', 'batch_time', 'data_length'
-schedule_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/schedule.csv', skiprows=3)
+schedule_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/continual_motion/schedule.csv', skiprows=3)
 
 if RUN_PLAINTEXT == True:
     schedule_csv.sort_values(["pickup_time"],axis=0,inplace=True)
     
-    #get the unique sample_times
-    unique_sample_times = schedule_csv.sample_time.unique()
+    #get the unique pickup_times
+    unique_pickup_times = schedule_csv.pickup_time.unique()
 
     #iterate through the sample times 
-    for sample_time in unique_sample_times:
+    for pickup_time in unique_pickup_times:
         #get a new df and unique mule_ids
-        data_to_send = schedule_csv.loc[schedule_csv['sample_time'] == sample_time]
+        data_to_send = schedule_csv.loc[schedule_csv['pickup_time'] == pickup_time]
         unique_mule_ids = data_to_send.mule_id.unique()
 
         #initialize msg array and loop through mule ids to populate msgs 
@@ -72,6 +72,13 @@ if RUN_PLAINTEXT == True:
 
         end_time = time.time()
         print(end_time-start_time)
+
+        number_messages = len(msgs)
+
+        #open a csv to write data to 
+        with open('latency_tp_pt_schedule.csv', mode='a') as csvfile:
+            csvwriter = csv.writer(csvfile,delimiter=',')
+            csvwriter.writerow([number_messages,end_time-start_time,(number_messages/(end_time-start_time))])
 
 elif RUN_EXPRESS == True:
     schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
