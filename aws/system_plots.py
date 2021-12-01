@@ -15,8 +15,8 @@ plt.figure(1)
 sns.lineplot(x=plaintext_df.num_mules,y=plaintext_df.latency,label="plaintext")
 sns.lineplot(x=express_df.num_mules,y=express_df.latency,label="express")
 #plt.ylim(1,3)
-plt.title("Latency vs. Parallel Messages")
-plt.xlabel("Number of Mules Sending in Parallel")
+plt.title("Latency at Scale")
+plt.xlabel("Number of Mules Sending")
 plt.ylabel("Latency (s)")
 plt.savefig('latency.pdf') #change to svg to generate higher fidelity plots
 
@@ -24,7 +24,7 @@ plt.savefig('latency.pdf') #change to svg to generate higher fidelity plots
 plt.figure(2)
 sns.lineplot(x=plaintext_df.num_mules,y=(plaintext_df.num_mules/plaintext_df.latency),label="plaintext")
 sns.lineplot(x=express_df.num_mules,y=express_df.throughput,label="express")
-plt.title("Throughput vs. Parallel Messages")
-plt.xlabel("Number of Mules Sending in Parallel")
-plt.ylabel("Throughput (msgs/sec)")
+plt.title("Throughput at Scale")
+plt.xlabel("Number of Mules Sending")
+plt.ylabel("Throughput (messages/sec)")
 plt.savefig('throughput.pdf') #change to svg to generate higher fidelity plots
