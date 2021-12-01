@@ -1,7 +1,6 @@
 // Heavily based on Express evaluation code @ https://github.com/SabaEskandarian/Express
 //   - see also: https://www.usenix.org/system/files/sec21-eskandarian.pdf
 //   - original source code based on denji/golang-tls
-
 package main
 
 /*
@@ -21,14 +20,14 @@ import (
 	"flag"
 	"fmt"
 	"golang.org/x/crypto/nacl/box"
-	//	"io"
+	//"io"
 	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	//"sync"
-	//"time"
+	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -82,18 +81,49 @@ func main() {
 	_ = auditorPublicKey
 
 	input_chan := make(chan string, numThreads)
+
+	var wg sync.WaitGroup
+	wg.Add(numThreads)
+
 	for i := 0; i < numThreads; i++ {
-		go worker(input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
+		go worker(&wg, input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
 	}
+
+	var write_start time.Time
+	write_start_flag := false
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		input, _ := reader.ReadString('\n')
+
+		if input[0:1] == "1" && !write_start_flag { // we're starting writes, start the timer
+			write_start = time.Now()
+			write_start_flag = true
+		}
+
+		if input[0:1] == "2" {
+			// send 2s to all workers and exit
+			for i := 0; i < numThreads; i++ {
+				input_chan <- "2"
+			}
+			break
+		}
 		input_chan <- input
 	}
+
+	wg.Wait()
+
+	write_duration := time.Since(write_start)
+	log.Printf("Write avg latency (%v threads): %v\n", numThreads, total_latency.Seconds()/float64(total_sends))
+	log.Printf("Write throughput  (%v threads): %v\n", numThreads, float64(total_sends)/write_duration.Seconds())
 }
 
-func worker(input chan string, leaderIP, followerIP string, dataSize int, s2PublicKey, clientSecretKey *[32]byte) {
+var total_latency time.Duration
+var total_sends int
+
+func worker(wg *sync.WaitGroup, input chan string, leaderIP, followerIP string, dataSize int, s2PublicKey, clientSecretKey *[32]byte) {
+
+	defer wg.Done()
 
 	for {
 		input_str := <-input
@@ -124,7 +154,15 @@ func worker(input chan string, leaderIP, followerIP string, dataSize int, s2Publ
 				log.Println("error:", err)
 				return
 			}
+
+			defer func(t time.Time) {
+				total_latency += time.Since(t)
+				total_sends++
+			}(time.Now())
 			writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
+
+		case "2": // no more writes
+			break
 
 		default:
 			log.Printf("warning: got unexpected input operation code %s\n", words[0])
