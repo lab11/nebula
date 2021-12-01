@@ -9,15 +9,15 @@ import numpy as np
 from multiprocessing import Pool
 
 #select True to run express,plaintext,or workload 
-RUN_EXPRESS = False
-RUN_PLAINTEXT = True
+RUN_EXPRESS = False 
+RUN_PLAINTEXT = False
 RUN_RAMP_WL = False
+RUN_RAMP_EXPRESS = True
 
 #parallel processing function
 def parallel_mqtt(msg):
     command = "python3 GalaxyAWS.py --topic topic/{} --root-ca ~/certs/Amazon-root-CA-1.pem --cert ~/certs/device.pem.crt --key ~/certs/private.pem.key --endpoint a3gshqjfftdu7n-ats.iot.us-west-1.amazonaws.com --message '{}' --count 1".format(msg['mule_id'],json.dumps(msg))
-    #print(command)
-    #command = "python3 GalaxyAWS.py --topic topic_1 --root-ca ~/certs/Amazon-root-CA-1.pem --cert ~/certs/device.pem.crt --key ~/certs/private.pem.key --endpoint a3gshqjfftdu7n-ats.iot.us-west-1.amazonaws.com --message '{}' --count 1".format(json.dumps(msg))
+    #print(command) #command = "python3 GalaxyAWS.py --topic topic_1 --root-ca ~/certs/Amazon-root-CA-1.pem --cert ~/certs/device.pem.crt --key ~/certs/private.pem.key --endpoint a3gshqjfftdu7n-ats.iot.us-west-1.amazonaws.com --message '{}' --count 1".format(json.dumps(msg))
     os.system(command)
 
 #pull in data from nRF board 
@@ -92,7 +92,7 @@ elif RUN_EXPRESS == True:
         '-dataSize', '128',
         '-leaderIP', EX_SERVER_A,
         '-followerIP', EX_SERVER_B,
-        '-numExistingRows', '0',
+        '-numExistingRows', '1000000',
         '-numThreads', '95'
     ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
@@ -100,6 +100,7 @@ elif RUN_EXPRESS == True:
     time.sleep(1)
 
     # add a new row for every mule id
+    '''
     print('adding a new row for every mule id')
     mule_ids = schedule_csv.mule_id.unique()
     mule_id_map = {}
@@ -109,11 +110,12 @@ elif RUN_EXPRESS == True:
         express.stdin.flush()
         # TODO read response but we don't need to right now
         mule_id_map[mule_id] = i
+    '''
 
     #get the unique pickup time
     unique_pickup_time = schedule_csv.pickup_time.unique()
 
-    time.sleep(3)
+    #time.sleep(3)
 
     print('starting transmissions')
     for pickup_time in unique_pickup_time:
@@ -137,7 +139,57 @@ elif RUN_EXPRESS == True:
             express.stdin.write('1 {} {}\n'.format(mule_id_map[m['mule_id']], m['data']))
             express.stdin.flush()
 
-    print('finished transmissions')
+    express.stdin.write('2\n')
+    express.stdin.flush()
+
+    express.wait()
+
+elif RUN_RAMP_EXPRESS == True:
+
+    EX_SERVER_A = '34.205.45.52:4442'
+    EX_SERVER_B = '18.209.20.193:4443'
+
+    for i in range(18):
+        number_parallel_messages = (i+1) * 5
+
+        print('--- express ramp w/ {} mules ---'.format(number_parallel_messages))
+
+        express = subprocess.Popen([
+            '../express/client', 
+            '-dataSize', '128',
+            '-leaderIP', EX_SERVER_A,
+            '-followerIP', EX_SERVER_B,
+            '-numExistingRows', '1000000',
+            '-numThreads', str(number_parallel_messages)
+        ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+
+        # sleep to give express a chance to start up
+        time.sleep(1)
+
+        #initialize message and message array 
+        msg = {
+            "mule_id":0,
+            "sensor_id":0,
+            "data":test_data
+        }
+        msgs = [msg for i in range(number_parallel_messages)]
+
+        '''
+        #open a csv to write data to 
+        with open('latency.csv', mode='a') as csvfile:
+            csvwriter = csv.writer(csvfile,delimiter=',')
+            csvwriter.writerow([number_messages,end_time-start_time])
+        '''
+
+        # NOTE: express expects hex string payloads, so all a's work but not random strings
+        for m in msgs:
+            express.stdin.write('1 {} {}\n'.format(m['mule_id'], m['data']))
+            express.stdin.flush()
+
+        express.stdin.write('2\n')
+        express.stdin.flush()
+
+        express.wait()
 
 elif RUN_RAMP_WL == True:
     #loop through to make message arrays of increasing size
