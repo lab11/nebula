@@ -111,13 +111,19 @@ func main() {
 		input_chan <- input
 	}
 
-	log.Printf("waiting for wg\n")
 	wg.Wait()
-	log.Printf("done waiting\n")
 
 	write_duration := time.Since(write_start)
-	log.Printf("Write avg latency (%v threads): %v\n", numThreads, total_latency.Seconds()/float64(total_sends))
-	log.Printf("Write throughput  (%v threads): %v\n", numThreads, float64(total_sends)/write_duration.Seconds())
+
+	f, err := os.OpenFile("express-stats.csv", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if _, err = fmt.Fprintf(f, "%v,%.4f,%.4f\n", numThreads, total_latency.Seconds()/float64(total_sends), float64(total_sends)/write_duration.Seconds()); err != nil {
+		panic(err)
+	}
 }
 
 var total_latency time.Duration
@@ -164,7 +170,7 @@ func worker(wg *sync.WaitGroup, input chan string, leaderIP, followerIP string, 
 			writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
 
 		case "2": // no more activity
-			log.Printf("worker no more activity, exiting\n")
+			//log.Printf("worker no more activity, exiting\n")
 			return
 
 		default:

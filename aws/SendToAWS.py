@@ -142,7 +142,7 @@ elif RUN_EXPRESS == True:
     express.stdin.write('2\n')
     express.stdin.flush()
 
-    print('finished transmissions')
+    express.wait()
 
 elif RUN_RAMP_EXPRESS == True:
 
@@ -189,9 +189,7 @@ elif RUN_RAMP_EXPRESS == True:
         express.stdin.write('2\n')
         express.stdin.flush()
 
-        while True:
-            pass
-
+        express.wait()
 
 elif RUN_RAMP_WL == True:
     #loop through to make message arrays of increasing size
