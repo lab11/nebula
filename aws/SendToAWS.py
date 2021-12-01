@@ -130,6 +130,9 @@ elif RUN_EXPRESS == True:
             express.stdin.write('1 {} {}\n'.format(mule_id_map[m['mule_id']], m['data']))
             express.stdin.flush()
 
+    express.stdin.write('2\n')
+    express.stdin.flush()
+
     print('finished transmissions')
 
 elif RUN_RAMP_WL == True:
