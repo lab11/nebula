@@ -1,3 +1,4 @@
+
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0.
 
@@ -155,7 +156,6 @@ if __name__ == '__main__':
     after_connected_time = time.time()
 
     # Subscribe
-    '''
     print("Subscribing to topic '{}'...".format(args.topic))
     subscribe_future, packet_id = mqtt_connection.subscribe(
         topic=args.topic,
@@ -164,15 +164,13 @@ if __name__ == '__main__':
 
     subscribe_result = subscribe_future.result()
     print("Subscribed with {}".format(str(subscribe_result['qos'])))
-    
-    # Writing to Memcached
-    memcachedb.set(args.topic, ags.message)
-    '''
+
 
 
     # Publish message to server desired number of times.
     # This step is skipped if message is blank.
     # This step loops forever if count was set to 0.
+    '''
     if args.message:
         if args.count == 0:
             print ("Sending messages until program killed")
@@ -195,8 +193,8 @@ if __name__ == '__main__':
                 qos=mqtt.QoS.AT_LEAST_ONCE)
             time.sleep(1)
             publish_count += 1
-
     '''
+
     # Wait for all messages to be received.
     # This waits forever if count was set to 0.
     if args.count != 0 and not received_all_event.is_set():
@@ -204,7 +202,6 @@ if __name__ == '__main__':
 
     received_all_event.wait()
     print("{} message(s) received.".format(received_count))
-    '''
 
     # Disconnect
     print("Disconnecting...")
