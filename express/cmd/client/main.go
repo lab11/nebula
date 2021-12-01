@@ -111,7 +111,9 @@ func main() {
 		input_chan <- input
 	}
 
+	log.Printf("waiting for wg\n")
 	wg.Wait()
+	log.Printf("done waiting\n")
 
 	write_duration := time.Since(write_start)
 	log.Printf("Write avg latency (%v threads): %v\n", numThreads, total_latency.Seconds()/float64(total_sends))
@@ -161,8 +163,9 @@ func worker(wg *sync.WaitGroup, input chan string, leaderIP, followerIP string, 
 			}(time.Now())
 			writeRow(idx, data, leaderIP, s2PublicKey, clientSecretKey)
 
-		case "2": // no more writes
-			break
+		case "2": // no more activity
+			log.Printf("worker no more activity, exiting\n")
+			return
 
 		default:
 			log.Printf("warning: got unexpected input operation code %s\n", words[0])
