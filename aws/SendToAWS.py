@@ -12,7 +12,9 @@ from multiprocessing import Pool
 RUN_EXPRESS = False 
 RUN_PLAINTEXT = False
 RUN_RAMP_WL = False
-RUN_RAMP_EXPRESS = True
+RUN_RAMP_EXPRESS = False
+RUN_RPI_PLAINTEXT = False
+RUN_RPI_EXPRESS = True
 
 #parallel processing function
 def parallel_mqtt(msg):
@@ -21,20 +23,23 @@ def parallel_mqtt(msg):
     os.system(command)
 
 #pull in data from nRF board 
-data_from_csv = []
+'''data_from_csv = []
 with open('nRf_data.csv', 'r') as csvfile:
     csvreader = csv.reader(csvfile)
     for i,row in enumerate(csvreader):
         #print(row)
         if (i >= 1):
             data_from_csv.append(row[1])
+'''
 
 #initialize test data of 79 string characters which is 128 bytes
 test_data = "a"*78
 
 #import schedule csv 
 #header:'sensor_id', 'mule_id', 'sample_time', 'pickup_time', 'batch_time', 'data_length'
+'''
 schedule_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/continual_motion/schedule.csv', skiprows=3)
+'''
 
 if RUN_PLAINTEXT == True:
     schedule_csv.sort_values(["pickup_time"],axis=0,inplace=True)
@@ -220,3 +225,80 @@ elif RUN_RAMP_WL == True:
         with open('latency.csv', mode='a') as csvfile:
             csvwriter = csv.writer(csvfile,delimiter=',')
             csvwriter.writerow([number_messages,end_time-start_time])
+
+elif RUN_RPI_PLAINTEXT == True:
+
+    count = 0   
+    while (count < 20):
+        msg = {
+            "mule_id":0,
+            "sensor_id":0,
+            "data":test_data
+        }
+        msgs = [msg]
+
+        #start timer 
+        start_time = time.time()
+
+        #send messages in parallel
+        pool = Pool()
+        pool.map(parallel_mqtt,msgs)
+        pool.close()
+
+        end_time = time.time()
+        print(end_time-start_time)  
+        count += 1 
+        print("wait")
+        time.sleep(10)
+        
+
+elif RUN_RPI_EXPRESS == True:
+
+    count = 0   
+    while (count < 20):
+        EX_SERVER_A = '34.205.45.52:4442'
+        EX_SERVER_B = '18.209.20.193:4443'
+
+            #print('--- express ramp w/ {} mules ---'.format(number_parallel_messages))
+
+        express = subprocess.Popen([
+            '../express/client', 
+            '-dataSize', '128',
+            '-leaderIP', EX_SERVER_A,
+            '-followerIP', EX_SERVER_B,
+            '-numExistingRows', '1000',
+            '-numThreads', str(1)
+        ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+
+        # sleep to give express a chance to start up
+        time.sleep(1)
+
+        #initialize message and message array 
+        msg = {
+            "mule_id":0,
+            "sensor_id":0,
+            "data":test_data
+        }
+        msgs = [msg]
+
+        '''
+        #open a csv to write data to 
+        with open('latency.csv', mode='a') as csvfile:
+            csvwriter = csv.writer(csvfile,delimiter=',')
+            csvwriter.writerow([number_messages,end_time-start_time])
+        '''
+
+        # NOTE: express expects hex string payloads, so all a's work but not random strings
+        for m in msgs:
+            express.stdin.write('1 {} {}\n'.format(m['mule_id'], m['data']))
+            express.stdin.flush()
+
+        express.stdin.write('2\n')
+        express.stdin.flush()
+
+        express.wait()
+        count +=1 
+        print("wait")
+        time.sleep(10)
+
+
