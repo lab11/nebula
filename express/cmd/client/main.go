@@ -90,20 +90,21 @@ func main() {
 		go worker(&wg, input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
 	}
 
-	queue_occupancy_f, err := os.OpenFile("queue-occ/"+strconv.Itoa(processId)+".csv", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	queue_occupancy_f, err := os.OpenFile("queue-occ/"+strconv.Itoa(processId)+".csv", os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		panic(err)
 	}
 	defer queue_occupancy_f.Close()
 
 	// start a task that writes input queue occupancy to csv every second?
+	start_time := time.Now()
 	ticker := time.NewTicker(1 * time.Second)
 	quit := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				if _, err = fmt.Fprintf(queue_occupancy_f, "%v,%v\n", time.Now().UnixNano(), len(input_chan)); err != nil {
+				if _, err = fmt.Fprintf(queue_occupancy_f, "%v,%v\n", time.Since(start_time).Seconds(), len(input_chan)); err != nil {
 					panic(err)
 				}
 			case <-quit:

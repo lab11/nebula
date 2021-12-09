@@ -90,7 +90,8 @@ elif RUN_EXPRESS == True:
     dummy_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/random_uploads/vary_mules/{}_mule_dummy.csv'.format(n_mules), skiprows=2)
 
     dummy_csv.sort_values(["batch_time"],axis=0,inplace=True)
-    #print(dummy_csv.head(10))
+    print(dummy_csv.head(10))
+
 
     EX_SERVER_A = '34.205.45.52:4442'
     EX_SERVER_B = '18.209.20.193:4443'
@@ -105,11 +106,13 @@ elif RUN_EXPRESS == True:
             '-leaderIP', EX_SERVER_A,
             '-followerIP', EX_SERVER_B,
             '-numExistingRows', str(existing_rows),
-            '-numThreads', '4',
+            '-numThreads', '1',
             '-processId', str(i)
         ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True))
 
     time.sleep(3)
+
+    prev_time = 0.0
 
     time_to_wait = dummy_csv.iloc[0]['batch_time'] 
     print('  waiting {} s for next batch'.format(time_to_wait))
@@ -117,23 +120,21 @@ elif RUN_EXPRESS == True:
 
     for idx, row in dummy_csv.iterrows():
 
-        mule_id, batch_time = int(row['mule_id']), row['batch_time']
-        print('\n\nprocessing mule {} batch at time {} s...'.format(mule_id, batch_time))
+        mule_id, curr_time = int(row['mule_id']), row['batch_time']
+
+        print('waiting {} s for next batch'.format(curr_time - prev_time))
+        time.sleep(curr_time - prev_time)
+
+        print('\n\nprocessing mule {} batch at time {} s...'.format(mule_id, curr_time))
         
         for i in range(batch_size):
             # NOTE: express expects hex string payloads, so all a's work but not random strings
             express_procs[mule_id].stdin.write('1 {} {}\n'.format(mule_id, test_data))
             express_procs[mule_id].stdin.flush()
 
-        if idx == dummy_csv.shape[0] - 1:
-            break
+        prev_time = curr_time  
 
-        next_row = dummy_csv.iloc[idx + 1]
-        curr_time, next_time = row['batch_time'], next_row['batch_time']
-
-        print('waiting {} s for next batch'.format(next_time - curr_time))
-        time.sleep(next_time - curr_time)
-
+        
     # stop mules
     for e in express_procs:
         e.stdin.write('2\n')
@@ -155,7 +156,7 @@ elif RUN_RAMP_EXPRESS == True:
             '-dataSize', '128',
             '-leaderIP', EX_SERVER_A,
             '-followerIP', EX_SERVER_B,
-            '-numExistingRows', '1000000',
+            '-numExistingRows', '100000',
             '-numThreads', str(number_parallel_messages)
         ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 
