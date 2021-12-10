@@ -9,12 +9,15 @@ import numpy as np
 from multiprocessing import Pool
 
 #select True to run express,plaintext,or workload 
-RUN_EXPRESS = False 
+RUN_EXPRESS = True
 RUN_PLAINTEXT = False
 RUN_RAMP_WL = False
 RUN_RAMP_EXPRESS = False
+<<<<<<< HEAD
 RUN_RPI_PLAINTEXT = False
 RUN_RPI_EXPRESS = True
+=======
+>>>>>>> 2e49c138a52ee152d9e7be6beaf7ab5cb71f3267
 
 #parallel processing function
 def parallel_mqtt(msg):
@@ -86,68 +89,65 @@ if RUN_PLAINTEXT == True:
             csvwriter.writerow([number_messages,end_time-start_time,(number_messages/(end_time-start_time))])
 
 elif RUN_EXPRESS == True:
-    schedule_csv.sort_values(["batch_time"],axis=0,inplace=True)
-    print(schedule_csv.head(10))
+    n_mules = 100
+    batch_size = 100
+    existing_rows = 1000000
+
+    # read dummy batchy data csv
+    #  mule_id, batch_time
+    dummy_csv = pd.read_csv('../simulation/probabilistic_routing/prob_data/random_uploads/vary_mules/{}_mule_dummy.csv'.format(n_mules), skiprows=2)
+
+    dummy_csv.sort_values(["batch_time"],axis=0,inplace=True)
+    print(dummy_csv.head(10))
+
 
     EX_SERVER_A = '34.205.45.52:4442'
     EX_SERVER_B = '18.209.20.193:4443'
 
-    express = subprocess.Popen([
-        '../express/client', 
-        '-dataSize', '128',
-        '-leaderIP', EX_SERVER_A,
-        '-followerIP', EX_SERVER_B,
-        '-numExistingRows', '1000000',
-        '-numThreads', '95'
-    ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+    print('--- express realtime batch run w/ {} mules ---'.format(n_mules))
 
-    # sleep to give express a chance to start up
-    time.sleep(1)
+    express_procs = []
+    for i in range(n_mules):
+        express_procs.append(subprocess.Popen([
+            '../express/client', 
+            '-dataSize', '128',
+            '-leaderIP', EX_SERVER_A,
+            '-followerIP', EX_SERVER_B,
+            '-numExistingRows', str(existing_rows),
+            '-numThreads', '1',
+            '-processId', str(i)
+        ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True))
 
-    # add a new row for every mule id
-    '''
-    print('adding a new row for every mule id')
-    mule_ids = schedule_csv.mule_id.unique()
-    mule_id_map = {}
-    for i, mule_id in enumerate(mule_ids):
-        # send signal for new row, we'll use index in the list as the local row index
-        express.stdin.write('0\n') 
-        express.stdin.flush()
-        # TODO read response but we don't need to right now
-        mule_id_map[mule_id] = i
-    '''
+    time.sleep(3)
 
-    #get the unique pickup time
-    unique_pickup_time = schedule_csv.pickup_time.unique()
+    prev_time = 0.0
 
-    #time.sleep(3)
+    time_to_wait = dummy_csv.iloc[0]['batch_time'] 
+    print('  waiting {} s for next batch'.format(time_to_wait))
+    time.sleep(time_to_wait)
 
-    print('starting transmissions')
-    for pickup_time in unique_pickup_time:
-        #get a new df and unique mule_ids
-        data_to_send = schedule_csv.loc[schedule_csv['pickup_time'] == pickup_time]
-        unique_mule_ids = data_to_send.mule_id.unique()
+    for idx, row in dummy_csv.iterrows():
 
-        #initialize msg array and loop through mule ids to populate msgs 
-        msgs = []
-        for mule_id in unique_mule_ids:
-            message_data = data_to_send.loc[data_to_send['mule_id'] == mule_id]
-            msg = {
-                "mule_id":int(mule_id),
-                "sensor_id":message_data['sensor_id'].to_numpy().tolist(),
-                "data":test_data
-            }          
-            msgs.append(msg)
+        mule_id, curr_time = int(row['mule_id']), row['batch_time']
 
-        # NOTE: express expects hex string payloads, so all a's work but not random strings
-        for m in msgs:
-            express.stdin.write('1 {} {}\n'.format(mule_id_map[m['mule_id']], m['data']))
-            express.stdin.flush()
+        print('waiting {} s for next batch'.format(curr_time - prev_time))
+        time.sleep(curr_time - prev_time)
 
-    express.stdin.write('2\n')
-    express.stdin.flush()
+        print('\n\nprocessing mule {} batch at time {} s...'.format(mule_id, curr_time))
+        
+        for i in range(batch_size):
+            # NOTE: express expects hex string payloads, so all a's work but not random strings
+            express_procs[mule_id].stdin.write('1 {} {}\n'.format(mule_id, test_data))
+            express_procs[mule_id].stdin.flush()
 
-    express.wait()
+        prev_time = curr_time  
+
+        
+    # stop mules
+    for e in express_procs:
+        e.stdin.write('2\n')
+        e.stdin.flush()
+
 
 elif RUN_RAMP_EXPRESS == True:
 
@@ -164,7 +164,7 @@ elif RUN_RAMP_EXPRESS == True:
             '-dataSize', '128',
             '-leaderIP', EX_SERVER_A,
             '-followerIP', EX_SERVER_B,
-            '-numExistingRows', '1000000',
+            '-numExistingRows', '100000',
             '-numThreads', str(number_parallel_messages)
         ],stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
 

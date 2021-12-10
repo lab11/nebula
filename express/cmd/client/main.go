@@ -44,13 +44,14 @@ func main() {
 	// parse configuration
 	var leaderIP string
 	var followerIP string
-	var dataSize, numThreads, numExistingRows int
+	var dataSize, numThreads, numExistingRows, processId int
 
 	flag.StringVar(&leaderIP, "leaderIP", "localhost:4442", "IP:port of primary leader server")
 	flag.StringVar(&followerIP, "followerIP", "localhost:4443", "IP:port of secondary follower server")
 	flag.IntVar(&dataSize, "dataSize", 1024, "size of each mailbox")
 	flag.IntVar(&numThreads, "numThreads", 8, "number of client threads")
 	flag.IntVar(&numExistingRows, "numExistingRows", 0, "number of existing rows on server")
+	flag.IntVar(&processId, "processId", 0, "id to keep track of stats written out")
 
 	flag.Parse()
 
@@ -80,7 +81,7 @@ func main() {
 	}
 	_ = auditorPublicKey
 
-	input_chan := make(chan string, numThreads)
+	input_chan := make(chan string, 2000)
 
 	var wg sync.WaitGroup
 	wg.Add(numThreads)
@@ -88,6 +89,30 @@ func main() {
 	for i := 0; i < numThreads; i++ {
 		go worker(&wg, input_chan, leaderIP, followerIP, dataSize, s2PublicKey, clientSecretKey)
 	}
+
+	queue_occupancy_f, err := os.OpenFile("queue-occ/"+strconv.Itoa(processId)+".csv", os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		panic(err)
+	}
+	defer queue_occupancy_f.Close()
+
+	// start a task that writes input queue occupancy to csv every second?
+	start_time := time.Now()
+	ticker := time.NewTicker(1 * time.Second)
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if _, err = fmt.Fprintf(queue_occupancy_f, "%v,%v\n", time.Since(start_time).Seconds(), len(input_chan)); err != nil {
+					panic(err)
+				}
+			case <-quit:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 
 	var write_start time.Time
 	write_start_flag := false
