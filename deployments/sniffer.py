@@ -15,6 +15,8 @@ def get_aggregates(df):
     ndf = df[['mac', 'time', 'rssi']]
     ndf = ndf.groupby('mac', as_index=False)['time', 'rssi'].agg(list)
     ndf['reps'] = ndf['rssi'].str.len()
+    # df['startTime'] = df["time"].str[0]
+    # df['endTime'] = df["time"].str[-1]
     return ndf
 
 def analyze_data(df):
@@ -23,6 +25,7 @@ def analyze_data(df):
     df['mac'] = df.msg.str.split(r"address", expand=True)[1].str[3:20]
     df['rssi'] = df.msg.str.split(r"rssi", expand=True)[1].str[2:5]
     df['rssi'] = df['rssi'].swifter.apply(lambda x : pd.to_numeric(x))
+    df['addressType'] = df.msg.str.split(r"addressType", expand=True)[1].str[3:9]
     dfagg = get_aggregates(df)
     return dfagg
 
@@ -40,7 +43,7 @@ def read_files(path):
     df = None
     files = os.listdir(path)
     print(f"Reading {len(files)} Data Files")
-    for _file in tqdm(files):
+    for _file in tqdm(files[:1]):
         _file = path + _file
         _df = parse_json(_file)
         if df is None:
@@ -51,13 +54,14 @@ def read_files(path):
 
 
 if __name__ == '__main__':
-    path = '/home/ubuntu/galaxy/deployments/data/' 
+    path = '/home/ubuntu/galaxy/deployments/data/logs-540ab/' 
     df = read_files(path)
-    breakpoint()
     print(df.describe())
+
     print("Starting feature extraction..")
     df = analyze_data(df)
-    df.to_pickle("test.pkl")
+    breakpoint()
+    # df.to_pickle("test.pkl")
 
 
 
