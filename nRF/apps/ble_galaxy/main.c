@@ -18,6 +18,8 @@
 #include "nrf_serial.h"
 #include "nrfx_gpiote.h"
 #include "nrfx_saadc.h"
+//#include "ble_lesc.h"
+//#include "nrf_crypto.h"
 
 #include "simple_ble.h"
 #include "buckler.h"
@@ -103,6 +105,7 @@ int main(void) {
 
   // get sensor value
   nrf_saadc_value_t sensor_val = sample_value(SENSOR_CHANNEL);
+  //uint8_t sensor_val = 1;
 
   printf(sensor_val);
 
