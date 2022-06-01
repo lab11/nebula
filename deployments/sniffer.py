@@ -13,6 +13,7 @@ import swifter
 
 def get_aggregates(df):
     ndf = df[['mac', 'time', 'rssi']]
+    ndf = ndf.sort_values(['time'])
     ndf = ndf.groupby('mac', as_index=False)['time', 'rssi'].agg(list)
     ndf['reps'] = ndf['rssi'].str.len()
     # df['startTime'] = df["time"].str[0]
@@ -43,7 +44,7 @@ def read_files(path):
     df = None
     files = os.listdir(path)
     print(f"Reading {len(files)} Data Files")
-    for _file in tqdm(files[:1]):
+    for _file in tqdm(files):
         _file = path + _file
         _df = parse_json(_file)
         if df is None:
@@ -54,14 +55,14 @@ def read_files(path):
 
 
 if __name__ == '__main__':
-    path = '/home/ubuntu/galaxy/deployments/data/logs-540ab/' 
+    path = '/home/ubuntu/galaxy/deployments/data/logs-elevator/' 
     df = read_files(path)
     print(df.describe())
-
     print("Starting feature extraction..")
     df = analyze_data(df)
-    breakpoint()
-    # df.to_pickle("test.pkl")
+    pkl_file = "pkls/elevator-sortedtime.pkl"
+    print(f"Writing to file:{pkl_file}")
+    df.to_pickle(pkl_file)
 
 
 
