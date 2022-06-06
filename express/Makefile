@@ -1,5 +1,5 @@
 
-CC=gcc
+C=gcc
 
 all: server client
 
