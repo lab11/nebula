@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "sdk_config.h"
 #include "app_error.h"
 #include "nrf.h"
 #include "app_util.h"
@@ -18,13 +19,35 @@
 #include "nrf_serial.h"
 #include "nrfx_gpiote.h"
 #include "nrfx_saadc.h"
-//#include "ble_lesc.h"
-//#include "nrf_crypto.h"
 
 #include "simple_ble.h"
 #include "buckler.h"
 
-#include "max44009.h"
+#include <string.h>
+#include "nordic_common.h"
+#include "nrf_sdh.h"
+#include "nrf_sdh_soc.h"
+#include "nrf_sdh_ble.h"
+#include "peer_manager.h"
+#include "app_timer.h"
+#include "bsp_btn_ble.h"
+#include "ble.h"
+#include "app_util.h"
+#include "ble_advdata.h"
+#include "ble_advertising.h"
+#include "ble_conn_params.h"
+#include "ble_db_discovery.h"
+#include "ble_hrs.h"
+#include "ble_hrs_c.h"
+#include "ble_conn_state.h"
+#include "fds.h"
+#include "nrf_crypto.h"
+#include "nrf_ble_gatt.h"
+#include "nrf_ble_qwr.h"
+#include "ble_lesc.h"
+
+//#include "platform.h"
+
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -71,8 +94,7 @@ nrf_saadc_value_t sample_value (uint8_t channel) {
 
 int main(void) {
 
-  // Initialize
-
+  // Initialize error code
   ret_code_t error_code = NRF_SUCCESS;
 
   // initialize RTT library
@@ -97,6 +119,8 @@ int main(void) {
   error_code = nrfx_saadc_channel_init(SENSOR_CHANNEL, &channel_config);
   APP_ERROR_CHECK(error_code);
 
+
+
   // Setup Sensor GPIO
   //nrf_gpio_cfg_input(BUCKLER_GROVE_A1,NRF_GPIO_PIN_NOPULL);
 
@@ -109,9 +133,19 @@ int main(void) {
 
   printf(sensor_val);
 
-
   // Setup BLE
   simple_ble_app = simple_ble_init(&ble_config);
+
+  //test include from nrfx
+  //nrfx_testing_include();
+
+  //Initialize crypto 
+  error_code = nrf_crypto_init();
+  APP_ERROR_CHECK(error_code);
+
+  //Initialize BLE LE Secure Connections
+  error_code = ble_lesc_init();
+  APP_ERROR_CHECK(error_code);
 
   simple_ble_add_service(&soil_service);
 

@@ -1,9 +1,9 @@
 PROJECT_NAME = $(shell basename "$(realpath ./)")
 
 # Configurations
-NRF_IC = nrf52832
+NRF_IC = nrf52840
 SDK_VERSION = 15
-SOFTDEVICE_MODEL = s132
+SOFTDEVICE_MODEL = s140
 
 # Source and header files
 APP_HEADER_PATHS += .
