@@ -198,7 +198,7 @@ if __name__ == '__main__':
         bottom_ax.set_title('Number of concurrent interactions at {} over time (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
         bottom_ax.set_xlabel('Time (sec)')
         bottom_ax.set_ylabel('Number of concurrent interactions')
-        bottom_ax.set_yscale('log')
+        bottom_ax.set_yscale('symlog')
         bottom_ax.grid(which='both', alpha=0.3)
 
         # Iterate through all the MACs.
