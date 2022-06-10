@@ -17,23 +17,26 @@ BOARD_SOURCE_PATHS += $(wildcard $(BOARD_DIR)/../../libraries/*/)
 BOARD_HEADER_PATHS = $(BOARD_DIR)/.
 BOARD_HEADER_PATHS += $(BOARD_DIR)/../.
 BOARD_HEADER_PATHS += $(wildcard $(BOARD_DIR)/../../libraries/*/)
+BOARD_HEADER_PATHS += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/) 
 BOARD_LINKER_PATHS = $(BOARD_DIR)/.
 BOARD_SOURCES = $(notdir $(wildcard $(BOARD_DIR)/./*.c))
 BOARD_SOURCES += $(notdir $(wildcard $(BOARD_DIR)/../../libraries/*/*.c))
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/platform.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/mbedtls/*.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/cc310/*.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/cc310_bl/*.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/*/*.c)
+
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/platform.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/mbedtls/*.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/cc310/*.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/cc310_bl/*.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/*/*.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/nrf_crypto_ecc.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/nrf_crypto_init.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/nrf_crypto_error.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/atomic_flags/nrf_atflags.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecc.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecdh.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/bignum.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecc.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecdh.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/bignum.c)
+
 
 BOARD_AS = $(notdir $(wildcard $(BOARD_DIR)/./*.s))
 
@@ -68,6 +71,10 @@ BOARD_SOURCES += \
 	nrf_assert.c\
 	nrf_atomic.c\
 	nrf_balloc.c\
+	nrf_atflags.c\
+	nrf_crypto_ecc.c\
+	nrf_crypto_init.c\
+	nrf_crypto_error.c\
 	nrf_crypto_aead.c\
 	nrf_crypto_aes.c\
 	nrf_crypto_ecc.c\
@@ -83,7 +90,6 @@ BOARD_SOURCES += \
 	nrf_crypto_shared.c\
 	cc310_backend_ecc.c\
 	cc310_bl_backend_ecc.c\
-	platform.c\
 	nrf_drv_clock.c\
 	nrf_drv_ppi.c\
 	nrf_drv_spi.c\
@@ -119,15 +125,15 @@ BOARD_SOURCES += \
 	nrfx_twim.c\
 	nrfx_uart.c\
 	nrfx_uarte.c\
-	mem_manager.c\
 	simple_logger.c\
+	ble_conn_state.c\
+	ble_lesc.c\
 
 ifneq ($(SOFTDEVICE_MODEL),blank)
 BOARD_SOURCES += \
 	ble_advdata.c\
 	ble_advertising.c\
 	ble_conn_params.c\
-	ble_conn_state.c\
 	ble_srv_common.c\
 	nrf_ble_gatt.c\
 	nrf_ble_qwr.c\
