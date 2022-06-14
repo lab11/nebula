@@ -31,6 +31,10 @@ BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/c
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/nrf_crypto_init.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/nrf_crypto_error.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/atomic_flags/nrf_atflags.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/ble/peer_manager/*.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/ble/ble_db_discovery/*.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/fds/*.c)
+
 #BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
 #BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
 #BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecc.c)
@@ -128,6 +132,19 @@ BOARD_SOURCES += \
 	simple_logger.c\
 	ble_conn_state.c\
 	ble_lesc.c\
+	peer_manager.c\
+	fds.c\
+	ble_db_discovery.c\
+	nrf_atfifo.c\
+	nrf_fstorage.c\
+	nrf_fstorage_nvmc.c\
+	nrf_fstorage_sd.c\
+	cc310_backend_mutex.c\
+	cc310_backend_init.c\
+	nrf_hw_backend_rng.c\
+	nrf_hw_backend_init.c\
+	micro_ecc_backend_ecc.c\
+	uECC.c\
 
 ifneq ($(SOFTDEVICE_MODEL),blank)
 BOARD_SOURCES += \

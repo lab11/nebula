@@ -1,9 +1,11 @@
 PROJECT_NAME = $(shell basename "$(realpath ./)")
 
 # Configurations
-NRF_IC = nrf52840
+NRF_IC = nrf52832
+#NRF_IC = nrf52840
 SDK_VERSION = 15
-SOFTDEVICE_MODEL = s140
+#SOFTDEVICE_MODEL = s140
+SOFTDEVICE_MODEL = s132
 
 # Source and header files
 APP_HEADER_PATHS += .
@@ -16,3 +18,5 @@ include ../../boards/buckler_revC/Board.mk
 
 # Include main Makefile
 include $(NRF_BASE_DIR)/make/AppMakefile.mk
+
+LDFLAGS += -D__HEAP_SIZE=0

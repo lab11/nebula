@@ -5,6 +5,49 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+
+#include "sdk_config.h"
+#include "app_error.h"
+#include "nrf.h"
+#include "app_util.h"
+#include "nrf_twi_mngr.h"
+#include "nrf_gpio.h"
+#include "nrf_log.h"
+#include "nrf_log_ctrl.h"
+#include "nrf_log_default_backends.h"
+#include "nrf_pwr_mgmt.h"
+#include "nrf_serial.h"
+#include "nrfx_gpiote.h"
+#include "nrfx_saadc.h"
+#include "simple_ble.h"
+#include "buckler.h"
+#include "nordic_common.h"
+#include "nrf_sdh.h"
+#include "nrf_sdh_soc.h"
+#include "nrf_sdh_ble.h"
+#include "peer_manager.h"
+#include "app_timer.h"
+#include "bsp_btn_ble.h"
+#include "ble.h"
+#include "app_util.h"
+#include "ble_advdata.h"
+#include "ble_advertising.h"
+#include "ble_conn_params.h"
+#include "ble_db_discovery.h"
+#include "ble_hrs.h"
+#include "ble_hrs_c.h"
+#include "ble_conn_state.h"
+#include "fds.h"
+#include "nrf_crypto.h"
+#include "nrf_ble_gatt.h"
+#include "nrf_ble_qwr.h"
+#include "ble_lesc.h"
+
+/*
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "app_error.h"
 #include "nrf.h"
@@ -20,11 +63,79 @@
 #include "nrfx_saadc.h"
 #include "ble_lesc.h"
 #include "nrf_crypto.h"
+*/
 
-#include "simple_ble.h"
-#include "buckler.h"
+//#include "simple_ble.h"
+//#include "buckler.h"
 
 #include "max44009.h"
+
+#define LESC_DEBUG_MODE                 0                                               /**< Set to 1 to use LESC debug keys, allows you to use a sniffer to inspect traffic. */
+#define LESC_MITM_NC                    1                                               /**< Use MITM (Numeric Comparison). */
+
+/** @brief The maximum number of peripheral and central links combined. */
+#define NRF_BLE_LINK_COUNT              (NRF_SDH_BLE_PERIPHERAL_LINK_COUNT + NRF_SDH_BLE_CENTRAL_LINK_COUNT)
+
+#define APP_BLE_CONN_CFG_TAG            1                                               /**< A tag identifying the SoftDevice BLE configuration. */
+
+#define SEC_PARAMS_BOND                 1                                               /**< Perform bonding. */
+#if LESC_MITM_NC
+#define SEC_PARAMS_MITM                 1                                               /**< Man In The Middle protection required. */
+#define SEC_PARAMS_IO_CAPABILITIES      BLE_GAP_IO_CAPS_DISPLAY_YESNO                   /**< Display Yes/No to force Numeric Comparison. */
+#else
+#define SEC_PARAMS_MITM                 0                                               /**< Man In The Middle protection required. */
+#define SEC_PARAMS_IO_CAPABILITIES      BLE_GAP_IO_CAPS_NONE                            /**< No I/O caps. */
+#endif
+#define SEC_PARAMS_LESC                 1                                               /**< LE Secure Connections pairing required. */
+#define SEC_PARAMS_KEYPRESS             0                                               /**< Keypress notifications not required. */
+#define SEC_PARAMS_OOB                  0                                               /**< Out Of Band data not available. */
+#define SEC_PARAMS_MIN_KEY_SIZE         7                                               /**< Minimum encryption key size in octets. */
+#define SEC_PARAMS_MAX_KEY_SIZE         16                                              /**< Maximum encryption key size in octets. */
+
+#define BLE_GAP_LESC_P256_SK_LEN        32
+
+#define MIN_CONNECTION_INTERVAL         (uint16_t) MSEC_TO_UNITS(7.5, UNIT_1_25_MS)     /**< Determines minimum connection interval in milliseconds. */
+#define MAX_CONNECTION_INTERVAL         (uint16_t) MSEC_TO_UNITS(30, UNIT_1_25_MS)      /**< Determines maximum connection interval in milliseconds. */
+#define SLAVE_LATENCY                   0                                               /**< Determines slave latency in terms of connection events. */
+#define SUPERVISION_TIMEOUT             (uint16_t) MSEC_TO_UNITS(500, UNIT_10_MS)       /**< Determines supervision time-out in units of 10 milliseconds. */
+
+#define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(5000)                           /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (5 seconds). */
+#define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000)                          /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
+#define MAX_CONN_PARAMS_UPDATE_COUNT    3                                               /**< Number of attempts before giving up the connection parameter negotiation. */
+
+NRF_BLE_GATT_DEF(m_gatt);                                                   /**< GATT module instance. */
+NRF_BLE_QWRS_DEF(m_qwr, NRF_SDH_BLE_TOTAL_LINK_COUNT);                      /**< Context for the Queued Write module.*/
+BLE_ADVERTISING_DEF(m_advertising);                                         /**< Advertising module instance. */
+BLE_DB_DISCOVERY_DEF(m_db_disc);                                            /**< DB discovery module instance. */
+
+typedef struct
+{
+    bool           is_connected;
+    ble_gap_addr_t address;
+} conn_peer_t;
+
+
+static conn_peer_t        m_connected_peers[NRF_BLE_LINK_COUNT];                         /**< Array of connected peers. */
+static uint8_t            m_scan_buffer_data[BLE_GAP_SCAN_BUFFER_MIN];                   /**< Buffer where advertising reports will be stored by the SoftDevice. */
+
+
+/**@brief Pointer to the buffer where advertising reports will be stored by the SoftDevice. */
+static ble_data_t m_scan_buffer =
+{
+    m_scan_buffer_data,
+    BLE_GAP_SCAN_BUFFER_MIN
+};
+
+/** @brief Parameters used when scanning. */
+static ble_gap_scan_params_t const m_scan_params =
+{
+    .active            = 1,
+    .interval          = SCAN_INTERVAL,
+    .window            = SCAN_WINDOW,
+    .timeout           = SCAN_DURATION,
+    .scan_phys         = BLE_GAP_PHY_1MBPS,
+    .filter_policy     = BLE_GAP_SCAN_FP_ACCEPT_ALL,
+};
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -69,11 +180,9 @@ nrf_saadc_value_t sample_value (uint8_t channel) {
   return val;
 }
 
-int main(void) {
-  printf("I'm doing something for sure!\n");
-
-  // Initialize
-
+//function to initialize RTT library
+static void rtt_init(void) {
+  // Initialize error code
   ret_code_t error_code = NRF_SUCCESS;
 
   // initialize RTT library
@@ -81,11 +190,263 @@ int main(void) {
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
 
+}
+
+//function to initialize analog to digital converter 
+static void adc_init(void) {
+  // Initialize error code
+  ret_code_t error_code = NRF_SUCCESS;
+
   // initialize analog to digital converter
   nrfx_saadc_config_t saadc_config = NRFX_SAADC_DEFAULT_CONFIG;
   saadc_config.resolution = NRF_SAADC_RESOLUTION_12BIT;
   error_code = nrfx_saadc_init(&saadc_config, saadc_callback);
   APP_ERROR_CHECK(error_code);
+}
+
+/**@brief Function for initiating scanning. From ble_app_multirole_lesc
+ */
+static void scan_start(void)
+{
+    ret_code_t err_code;
+
+    (void) sd_ble_gap_scan_stop();
+
+    err_code = sd_ble_gap_scan_start(&m_scan_params, &m_scan_buffer);
+    APP_ERROR_CHECK(err_code);
+
+    NRF_LOG_INFO("Scanning");
+}
+
+//function for initiating advertising and scanning. From ble_app_multirole_lesc
+//TODO edit to advertise the message that we want
+static void adv_scan_start(void)
+{
+    ret_code_t err_code;
+
+    scan_start();
+
+    // Turn on the LED to signal scanning.
+    //bsp_board_led_on(CENTRAL_SCANNING_LED);
+
+    // Start advertising.
+    err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
+    APP_ERROR_CHECK(err_code);
+
+    NRF_LOG_INFO("Advertising");
+}
+
+//function for checking if a link already exists with a new connected peer. From ble_app_multirole_lesc
+static bool is_already_connected(ble_gap_addr_t const * p_connected_adr)
+{
+    for (uint32_t i = 0; i < NRF_BLE_LINK_COUNT; i++)
+    {
+        if (m_connected_peers[i].is_connected)
+        {
+            if (m_connected_peers[i].address.addr_type == p_connected_adr->addr_type)
+            {
+                if (memcmp(m_connected_peers[i].address.addr,
+                           p_connected_adr->addr,
+                           sizeof(m_connected_peers[i].address.addr)) == 0)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**@brief Connection parameters requested for connection. */
+
+static ble_gap_conn_params_t const m_connection_param =
+{
+    MIN_CONNECTION_INTERVAL,
+    MAX_CONNECTION_INTERVAL,
+    SLAVE_LATENCY,
+    SUPERVISION_TIMEOUT
+};
+
+static char * roles_str[] =
+{
+    "INVALID_ROLE",
+    "CENTRAL",
+    "PERIPHERAL",
+};
+
+//@brief Function for handling File Data Storage events.
+
+static void fds_evt_handler(fds_evt_t const * const p_fds_evt)
+{
+    if (p_fds_evt->id == FDS_EVT_GC)
+    {
+        NRF_LOG_DEBUG("GC completed");
+    }
+}
+
+
+//@brief Function for handling Peer Manager events.
+
+static void pm_evt_handler(pm_evt_t const * p_evt)
+{
+    ret_code_t err_code;
+    uint16_t role = ble_conn_state_role(p_evt->conn_handle);
+
+    switch (p_evt->evt_id)
+    {
+        case PM_EVT_BONDED_PEER_CONNECTED:
+        {
+            NRF_LOG_DEBUG("%s : PM_EVT_BONDED_PEER_CONNECTED: peer_id=%d",
+                           nrf_log_push(roles_str[role]),
+                           p_evt->peer_id);
+        } break;
+
+        case PM_EVT_CONN_SEC_START:
+        {
+            NRF_LOG_DEBUG("%s : PM_EVT_CONN_SEC_START: peer_id=%d",
+                           nrf_log_push(roles_str[role]),
+                           p_evt->peer_id);
+        } break;
+
+        case PM_EVT_CONN_SEC_SUCCEEDED:
+        {
+            NRF_LOG_INFO("%s : PM_EVT_CONN_SEC_SUCCEEDED conn_handle: %d, Procedure: %d",
+                           nrf_log_push(roles_str[role]),
+                           p_evt->conn_handle,
+                           p_evt->params.conn_sec_succeeded.procedure);
+        } break;
+
+        case PM_EVT_CONN_SEC_FAILED:
+        {
+            NRF_LOG_DEBUG("%s: PM_EVT_CONN_SEC_FAILED: peer_id=%d, error=%d",
+                          nrf_log_push(roles_str[role]),
+                          p_evt->peer_id,
+                          p_evt->params.conn_sec_failed.error);
+
+        } break;
+
+        case PM_EVT_CONN_SEC_CONFIG_REQ:
+        {
+            // Reject pairing request from an already bonded peer.
+            pm_conn_sec_config_t conn_sec_config = {.allow_repairing = false};
+            pm_conn_sec_config_reply(p_evt->conn_handle, &conn_sec_config);
+        } break;
+
+        case PM_EVT_STORAGE_FULL:
+        {
+            // Run garbage collection on the flash.
+            err_code = fds_gc();
+            if (err_code == FDS_ERR_NO_SPACE_IN_QUEUES)
+            {
+                // Retry.
+            }
+        } break;
+
+        case PM_EVT_PEER_DATA_UPDATE_SUCCEEDED:
+        {
+            NRF_LOG_DEBUG("%s: PM_EVT_PEER_DATA_UPDATE_SUCCEEDED: peer_id=%d data_id=0x%x action=0x%x",
+                           nrf_log_push(roles_str[role]),
+                           p_evt->peer_id,
+                           p_evt->params.peer_data_update_succeeded.data_id,
+                           p_evt->params.peer_data_update_succeeded.action);
+        } break;
+
+        case PM_EVT_PEERS_DELETE_SUCCEEDED:
+        {
+            adv_scan_start();
+        } break;
+
+        case PM_EVT_PEER_DATA_UPDATE_FAILED:
+        {
+            // Assert.
+            APP_ERROR_CHECK(p_evt->params.peer_data_update_failed.error);
+        } break;
+
+        case PM_EVT_PEER_DELETE_FAILED:
+        {
+            // Assert.
+            APP_ERROR_CHECK(p_evt->params.peer_delete_failed.error);
+        } break;
+
+        case PM_EVT_PEERS_DELETE_FAILED:
+        {
+            // Assert.
+            APP_ERROR_CHECK(p_evt->params.peers_delete_failed_evt.error);
+        } break;
+
+        case PM_EVT_ERROR_UNEXPECTED:
+        {
+            // Assert.
+            APP_ERROR_CHECK(p_evt->params.error_unexpected.error);
+        } break;
+
+        case PM_EVT_PEER_DELETE_SUCCEEDED:
+        case PM_EVT_LOCAL_DB_CACHE_APPLIED:
+        case PM_EVT_LOCAL_DB_CACHE_APPLY_FAILED:
+            // This can happen when the local DB has changed.
+        case PM_EVT_SERVICE_CHANGED_IND_SENT:
+        case PM_EVT_SERVICE_CHANGED_IND_CONFIRMED:
+        default:
+            break;
+    }
+}
+
+
+
+//Function for initializing the Peer Manager.
+
+static void peer_manager_init(void)
+{
+    ble_gap_sec_params_t sec_params;
+    ret_code_t err_code;
+
+    err_code = pm_init();
+    APP_ERROR_CHECK(err_code);
+
+    memset(&sec_params, 0, sizeof(ble_gap_sec_params_t));
+
+    // Security parameters to be used for all security procedures.
+    sec_params.bond           = SEC_PARAMS_BOND;
+    sec_params.mitm           = SEC_PARAMS_MITM;
+    sec_params.lesc           = SEC_PARAMS_LESC;
+    sec_params.keypress       = SEC_PARAMS_KEYPRESS;
+    sec_params.io_caps        = SEC_PARAMS_IO_CAPABILITIES;
+    sec_params.oob            = SEC_PARAMS_OOB;
+    sec_params.min_key_size   = SEC_PARAMS_MIN_KEY_SIZE;
+    sec_params.max_key_size   = SEC_PARAMS_MAX_KEY_SIZE;
+    sec_params.kdist_own.enc  = 1;
+    sec_params.kdist_own.id   = 1;
+    sec_params.kdist_peer.enc = 1;
+    sec_params.kdist_peer.id  = 1;
+
+    err_code = pm_sec_params_set(&sec_params);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = pm_register(pm_evt_handler);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = fds_register(fds_evt_handler);
+    APP_ERROR_CHECK(err_code);
+
+    // Generate the ECDH key pair and set public key in the peer-manager.
+    err_code = ble_lesc_ecc_keypair_generate_and_set();
+    APP_ERROR_CHECK(err_code);
+}
+
+
+
+static void crypto_init(void) {
+  // Initialize error code
+  ret_code_t error_code = NRF_SUCCESS;
+
+  //Initialize crypto 
+  error_code = nrf_crypto_init();
+  APP_ERROR_CHECK(error_code);
+}
+
+static void analog_in_init(void) {
+  // Initialize error code
+  ret_code_t error_code = NRF_SUCCESS;
 
   // initialize analog inputs
   // configure with 0 as input pin for now
@@ -97,25 +458,27 @@ int main(void) {
   channel_config.pin_p = BUCKLER_GROVE_A1;
   error_code = nrfx_saadc_channel_init(SENSOR_CHANNEL, &channel_config);
   APP_ERROR_CHECK(error_code);
+}
 
-  // Setup Sensor GPIO
-  //nrf_gpio_cfg_input(BUCKLER_GROVE_A1,NRF_GPIO_PIN_NOPULL);
+int main(void) {
+
+  ret_code_t error_code = NRF_SUCCESS;
+  rtt_init();
+  adc_init();
+  analog_in_init();
+  //ble_stack_init();
+  //peer_manager_init();
+
+
   printf("I'm doing something for sure!\n");
-
-  // initialization complete
-  printf("Sensor ADC channel initialized!\n");
 
     //Initialize BLE LE Secure Connections
   error_code = ble_lesc_init();
   APP_ERROR_CHECK(error_code);
 
-  printf("ble lesc initialized");
+  printf("ble lesc initialized\n");
 
-  // get sensor value
-  nrf_saadc_value_t sensor_val = sample_value(SENSOR_CHANNEL);
-  //uint8_t sensor_val = 1;
-
-  printf(sensor_val);
+  uint8_t sensor_val = 1; // placeholder 
 
 
   // Setup BLE
