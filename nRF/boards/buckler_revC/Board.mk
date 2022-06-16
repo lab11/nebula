@@ -145,6 +145,8 @@ BOARD_SOURCES += \
 	nrf_hw_backend_init.c\
 	micro_ecc_backend_ecc.c\
 	uECC.c\
+	nrf_drv_rng.c\
+	nrfx_rng.c\
 
 ifneq ($(SOFTDEVICE_MODEL),blank)
 BOARD_SOURCES += \

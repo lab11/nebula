@@ -103,6 +103,10 @@
 #define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000)                          /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
 #define MAX_CONN_PARAMS_UPDATE_COUNT    3                                               /**< Number of attempts before giving up the connection parameter negotiation. */
 
+#define ADV_INTERVAL                    300
+#define APP_ADV_DURATION                18000                                           /**< The advertising duration (180 seconds) in units of 10 milliseconds. */
+
+
 NRF_BLE_GATT_DEF(m_gatt);                                                   /**< GATT module instance. */
 NRF_BLE_QWRS_DEF(m_qwr, NRF_SDH_BLE_TOTAL_LINK_COUNT);                      /**< Context for the Queued Write module.*/
 BLE_ADVERTISING_DEF(m_advertising);                                         /**< Advertising module instance. */
@@ -138,6 +142,7 @@ static ble_gap_scan_params_t const m_scan_params =
 };
 
 // Intervals for advertising and connections
+
 static simple_ble_config_t ble_config = {
         // c0:98:e5:49:xx:xx
         .platform_id       = 0x49,    // used as 4th octect in device BLE address
@@ -156,6 +161,7 @@ static simple_ble_service_t soil_service = {{
 
 static simple_ble_char_t soil_char = {.uuid16 = 0x108a};
 static bool led_state = true;
+
 
 // ADC Channel 
 #define SENSOR_CHANNEL 0
@@ -224,7 +230,7 @@ static void adv_scan_start(void)
 {
     ret_code_t err_code;
 
-    scan_start();
+    //scan_start();
 
     // Turn on the LED to signal scanning.
     //bsp_board_led_on(CENTRAL_SCANNING_LED);
@@ -392,6 +398,28 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
 }
 
 
+// Function for handling advertising events.
+
+static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
+{
+    switch (ble_adv_evt)
+    {
+        case BLE_ADV_EVT_FAST:
+            //bsp_board_led_on(PERIPHERAL_ADVERTISING_LED);
+            //bsp_board_led_off(PERIPHERAL_CONNECTED_LED);
+            break;
+
+        case BLE_ADV_EVT_IDLE:
+        {
+            ret_code_t err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
+            APP_ERROR_CHECK(err_code);
+        } break;
+
+        default:
+            // No implementation needed.
+            break;
+    }
+}
 
 //Function for initializing the Peer Manager.
 
@@ -420,19 +448,48 @@ static void peer_manager_init(void)
     sec_params.kdist_peer.id  = 1;
 
     err_code = pm_sec_params_set(&sec_params);
+    printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     err_code = pm_register(pm_evt_handler);
+    printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     err_code = fds_register(fds_evt_handler);
+    printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     // Generate the ECDH key pair and set public key in the peer-manager.
     err_code = ble_lesc_ecc_keypair_generate_and_set();
+    printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 }
 
+
+void advertising_init(void)
+{
+    ret_code_t             err_code;
+    ble_advertising_init_t init;
+
+    memset(&init, 0, sizeof(init));
+
+    init.advdata.name_type               = BLE_ADVDATA_FULL_NAME;
+    init.advdata.include_appearance      = true;
+    init.advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+    //init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
+    //init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
+
+    init.config.ble_adv_fast_enabled  = true;
+    init.config.ble_adv_fast_interval = ADV_INTERVAL;
+    init.config.ble_adv_fast_timeout  = APP_ADV_DURATION;
+
+    init.evt_handler = on_adv_evt;
+
+    err_code = ble_advertising_init(&m_advertising, &init);
+    APP_ERROR_CHECK(err_code);
+
+    ble_advertising_conn_cfg_tag_set(&m_advertising, APP_BLE_CONN_CFG_TAG);
+}
 
 
 static void crypto_init(void) {
@@ -467,7 +524,8 @@ int main(void) {
   adc_init();
   analog_in_init();
   //ble_stack_init();
-  //peer_manager_init();
+  crypto_init();
+  peer_manager_init();
 
 
   printf("I'm doing something for sure!\n");
@@ -480,18 +538,25 @@ int main(void) {
 
   uint8_t sensor_val = 1; // placeholder 
 
-
   // Setup BLE
   simple_ble_app = simple_ble_init(&ble_config);
 
-  simple_ble_add_service(&soil_service);
 
-  simple_ble_add_characteristic(1, 1, 0, 0,
-      sizeof(sensor_val), (uint8_t*)&sensor_val,
-      &soil_service, &soil_char);
+  advertising_init();
+
+  //printf("advertising initialized\n");
+
+  adv_scan_start();
+
+
+  //simple_ble_add_service(&soil_service);
+
+  //simple_ble_add_characteristic(1, 1, 0, 0,
+  //    sizeof(sensor_val), (uint8_t*)&sensor_val,
+  //    &soil_service, &soil_char);
 
   // Start Advertising
-  simple_ble_adv_only_name();
+  //simple_ble_adv_only_name();
 
   while(1) {
     power_manage();
