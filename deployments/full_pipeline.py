@@ -16,6 +16,9 @@ import argparse
 from OuiLookup import OuiLookup
 import macaddress
 
+import pickle5 as pickle
+from matplotlib import pyplot as plt
+
 # Puts all the time and rssi values for each unique MAC into lists.
 def get_aggregates(df):
     ndf = df[['mac', 'time', 'rssi']]
@@ -39,13 +42,16 @@ def analyze_data(df):
 
 # Clean up the raw logs so it can actually be read as JSON.
 def parse_json(file):
-    df = pd.read_json(file, lines=True)
-    # The msg indices are hardcoded downstream. So, any changes here might break.
-    df["msg"] = df["msg"].replace(r'discovered peripheral Peripheral',' ', regex=True) # replace useless text
-    df["msg"] = df["msg"].replace(r'\n','"', regex=True) # replace newline with space
-    df["msg"] = df["msg"].replace(r': ','":', regex=True) # make it a dict
-    # df["msg"] = df["msg"].replace(r' ','', regex=True) # get rid of space
-    return df
+    try:
+        df = pd.read_json(file, lines=True)
+        # The msg indices are hardcoded downstream. So, any changes here might break.
+        df["msg"] = df["msg"].replace(r'discovered peripheral Peripheral',' ', regex=True) # replace useless text
+        df["msg"] = df["msg"].replace(r'\n','"', regex=True) # replace newline with space
+        df["msg"] = df["msg"].replace(r': ','":', regex=True) # make it a dict
+        # df["msg"] = df["msg"].replace(r' ','', regex=True) # get rid of space
+        return df
+    except:
+        print("!! Unable to process {}.".format(file))
 
 # Iterate through all the raw logs in a directory 
 def read_files(path):
@@ -53,7 +59,8 @@ def read_files(path):
     files = os.listdir(path)
     print(f"Reading {len(files)} Data Files")
     for _file in tqdm(files):
-        _file = path + _file
+        #breakpoint()
+        _file = path + "/" + _file
         _df = parse_json(_file)
         if df is None:
             df = _df
@@ -142,17 +149,17 @@ def calculate_interactions(df, maxgap=10.1, mincon=2.5, col='time'):
 
 if __name__ == '__main__':
     # Parse out our arguments.
-    parser = argparse.ArgumentParser(description='Generates interaction figures from raw log files collected by a Noble BLE sniffer.')
+    aParser = argparse.ArgumentParser(description='Generates interaction figures from raw log files collected by a Noble BLE sniffer.')
     ## For reading and processing log files.
-    parser.add_argument('--logs_dir', type=str, default='./data', help='Path to a directory of directories of log files.')
-    parser.add_argument('--pkls_dir', type=str, default='./pkls', help='Path to a directory where we store processed log files as pickles.')
+    aParser.add_argument('--logs_dir', type=str, default='./data', help='Path to a directory of directories of log files.')
+    aParser.add_argument('--pkls_dir', type=str, default='./pkls', help='Path to a directory where we store processed log files as pickles.')
     # For generating interactions with seen BLE devices.
-    parser.add_argument('--oui_list', type=str, default='./wireshark_oui_list.txt', help='Path to a file with known OUI prefixes.')
-    parser.add_argument('--max_gap', type=float, default=10.1, help='Maximum time (seconds) between advertisements before we consider it another interaction.')
-    parser.add_argument('--min_con', type=float, default=2.5, help='Minimum considered connection duration (seconds).')
-    parser.add_argument('--figs_dir', type=str, default='./figs', help='Path to a directory where we store the generated figures.')
+    aParser.add_argument('--oui_list', type=str, default='./wireshark_oui_list.txt', help='Path to a file with known OUI prefixes.')
+    aParser.add_argument('--max_gap', type=float, default=10.1, help='Maximum time (seconds) between advertisements before we consider it another interaction.')
+    aParser.add_argument('--min_con', type=float, default=2.5, help='Minimum considered connection duration (seconds).')
+    aParser.add_argument('--figs_dir', type=str, default='./figs', help='Path to a directory where we store the generated figures.')
 
-    args = parser.parse_args()
+    args = aParser.parse_args()
 
     # Crawl through a directory of directories of log files and process them all into pickles.
     for aDir in glob.glob('{}/*'.format(args.logs_dir)):
@@ -160,6 +167,7 @@ if __name__ == '__main__':
         df = read_files(aDir)
         print(df.describe())
         print("Starting feature extraction..")
+        df.reset_index(drop=True)
         df = analyze_data(df)
         pkl_file = "{}/{}.pkl".format(args.pkls_dir, location_name)
         print("Writing pickled logs to {}.".format(pkl_file))
@@ -219,5 +227,6 @@ if __name__ == '__main__':
 
         # Save our figure.
         plt.savefig("{}/{}.png".format(args.figs_dir, location))
+        plt.close()
 
 
