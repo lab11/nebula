@@ -162,6 +162,9 @@ static simple_ble_service_t soil_service = {{
 static simple_ble_char_t soil_char = {.uuid16 = 0x108a};
 static bool led_state = true;
 
+//TODO: need to use these somewhere w/ encrypted ...
+//GALAXY_SERVICE_UUID = "32e61089-2b22-4db5-a914-43ce41986c70"
+//GALAXY_CHAR_UUID    = "32e6108a-2b22-4db5-a914-43ce41986c70"
 
 // ADC Channel 
 #define SENSOR_CHANNEL 0
@@ -542,18 +545,24 @@ int main(void) {
   simple_ble_app = simple_ble_init(&ble_config);
 
 
+  simple_ble_add_service(&soil_service);
+
+  simple_ble_add_characteristic(1, 1, 0, 0,
+      sizeof(sensor_val), (uint8_t*)&sensor_val,
+      &soil_service, &soil_char);
+  
+
   advertising_init();
 
   //printf("advertising initialized\n");
 
   adv_scan_start();
 
+  //connect with raspberry pi 
 
-  //simple_ble_add_service(&soil_service);
+  //TODO:add service
+  //TODO: add characteristic
 
-  //simple_ble_add_characteristic(1, 1, 0, 0,
-  //    sizeof(sensor_val), (uint8_t*)&sensor_val,
-  //    &soil_service, &soil_char);
 
   // Start Advertising
   //simple_ble_adv_only_name();
