@@ -238,10 +238,13 @@ static void adv_scan_start(void)
     // Turn on the LED to signal scanning.
     //bsp_board_led_on(CENTRAL_SCANNING_LED);
 
+    printf("in adv_scan_start\n");
+
     // Start advertising.
     err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);
 
+    printf("advertising\n");
     NRF_LOG_INFO("Advertising");
 }
 
@@ -451,22 +454,26 @@ static void peer_manager_init(void)
     sec_params.kdist_peer.id  = 1;
 
     err_code = pm_sec_params_set(&sec_params);
-    printf("%ld",err_code);
+    //printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     err_code = pm_register(pm_evt_handler);
-    printf("%ld",err_code);
+    //printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     err_code = fds_register(fds_evt_handler);
-    printf("%ld",err_code);
+    //printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
 
     // Generate the ECDH key pair and set public key in the peer-manager.
     err_code = ble_lesc_ecc_keypair_generate_and_set();
-    printf("%ld",err_code);
+    //printf("%ld",err_code);
     APP_ERROR_CHECK(err_code);
+    //printf("made it to the end of peer_manager_init\n");
 }
+
+static ble_uuid_t m_adv_uuids[] = {{BLE_UUID_HEART_RATE_SERVICE,         BLE_UUID_TYPE_BLE},
+                                   {BLE_UUID_RUNNING_SPEED_AND_CADENCE,  BLE_UUID_TYPE_BLE}};
 
 
 void advertising_init(void)
@@ -479,8 +486,8 @@ void advertising_init(void)
     init.advdata.name_type               = BLE_ADVDATA_FULL_NAME;
     init.advdata.include_appearance      = true;
     init.advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-    //init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
-    //init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
+    init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
+    init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
 
     init.config.ble_adv_fast_enabled  = true;
     init.config.ble_adv_fast_interval = ADV_INTERVAL;
@@ -494,6 +501,123 @@ void advertising_init(void)
     ble_advertising_conn_cfg_tag_set(&m_advertising, APP_BLE_CONN_CFG_TAG);
 }
 
+//TODO: add_galaxy_characteristic function to replace simple function
+static void galaxy_add_characteristic(uint8_t read, uint8_t write, uint8_t notify, uint8_t vlen,
+                                   uint16_t len, uint8_t* buf,
+                                   simple_ble_service_t* service_handle,
+                                   simple_ble_char_t* char_handle) {
+    ret_code_t err_code;
+
+    // Set characteristic UUID & add it
+    ble_uuid_t char_uuid;
+    char_uuid.type = service_handle->uuid_handle.type;
+    char_uuid.uuid = char_handle->uuid16;
+
+    err_code = sd_ble_uuid_vs_add(&service_handle->uuid128, &char_uuid.type);
+    APP_ERROR_CHECK(err_code);
+
+    // Set characteristic metadata
+    ble_gatts_char_md_t char_md;
+    memset(&char_md, 0, sizeof(char_md));
+    char_md.char_props.read   = read;
+    char_md.char_props.write  = write;
+    char_md.char_props.notify = notify;
+    char_md.p_char_user_desc  = NULL;
+    char_md.p_char_pf         = NULL;
+    char_md.p_user_desc_md    = NULL;
+    char_md.p_cccd_md         = NULL;
+    char_md.p_sccd_md         = NULL;
+
+    // Configuring Client Characteristic Configuration Descriptor (CCCD) metadata and add to char_md structure
+    ble_gatts_attr_md_t cccd_md;
+    memset(&cccd_md, 0, sizeof(cccd_md));
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.read_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cccd_md.write_perm);
+    cccd_md.vloc      = BLE_GATTS_VLOC_STACK;
+    char_md.p_cccd_md = &cccd_md;
+
+    // Set attribute metadata
+    ble_gatts_attr_md_t attr_md;
+    memset(&attr_md, 0, sizeof(attr_md));
+
+    //Set LESC security 
+    // Require LESC with MITM (Numeric Comparison)
+    BLE_GAP_CONN_SEC_MODE_SET_LESC_ENC_WITH_MITM(&attr_md.write_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&attr_md.read_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&attr_md.write_perm);
+
+    // Require LESC with MITM (Numeric Comparison)
+    BLE_GAP_CONN_SEC_MODE_SET_LESC_ENC_WITH_MITM(&attr_md.read_perm);
+    BLE_GAP_CONN_SEC_MODE_SET_NO_ACCESS(&attr_md.write_perm);
+
+    //OLD sec settings
+    //read) BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.read_perm);
+    //if (write) BLE_GAP_CONN_SEC_MODE_SET_OPEN(&attr_md.write_perm);
+    attr_md.vloc    = BLE_GATTS_VLOC_USER;
+    attr_md.rd_auth = 0;
+    attr_md.wr_auth = 0;
+    attr_md.vlen    = vlen;
+
+    // Set attribute data
+    ble_gatts_attr_t attr_char_value;
+    memset(&attr_char_value, 0, sizeof(attr_char_value));
+    attr_char_value.p_uuid    = &char_uuid;
+    attr_char_value.p_attr_md = &attr_md;
+    attr_char_value.init_len  = len;
+    attr_char_value.init_offs = 0;
+    attr_char_value.max_len   = len; // max len can be up to BLE_GATTS_FIX_ATTR_LEN_MAX (510)
+    attr_char_value.p_value   = buf;
+
+    err_code = sd_ble_gatts_characteristic_add((service_handle->service_handle), &char_md, &attr_char_value, &(char_handle->char_handle));
+    APP_ERROR_CHECK(err_code);
+
+}
+
+/*
+simple_ble_app_t* galaxy_ble_init(const simple_ble_config_t* conf) {
+    ble_config = conf;
+
+    // Initialize power management
+    ret_code_t err_code = NRF_SUCCESS;
+    err_code = nrf_pwr_mgmt_init();
+    APP_ERROR_CHECK(err_code);
+
+    // APP_TIMER_INIT must be called before BLE setup that relies on it
+    initialize_app_timer();
+
+    // Setup BLE and services
+    ble_stack_init();
+    printf("ble stack setup\n");
+    gap_params_init();
+    printf("gap setup\n");
+    gatt_init();
+    printf("gatt setup\n");
+    advertising_init();
+    printf("advertising setup\n");
+    services_init();
+    printf("services setup\n");
+
+    // Create device information service
+#if defined(HW_REVISION) || defined(FW_REVISION)
+    //simple_ble_device_info_service_automatic();
+#endif
+
+    // Enable device firmware updates
+#ifdef ENABLE_DFU
+    //dfu_init();
+#endif
+
+    conn_params_init();
+    //peer_manager_init();
+
+    // Initialize our connection state to "not in a connection"
+    app.conn_handle = BLE_CONN_HANDLE_INVALID;
+
+    // Return a reference to the application state so that the user of this
+    // module has a pointer to the connection handle.
+    return &app;
+}
+*/
 
 static void crypto_init(void) {
   // Initialize error code
@@ -520,6 +644,39 @@ static void analog_in_init(void) {
   APP_ERROR_CHECK(error_code);
 }
 
+static void conn_params_error_handler(uint32_t nrf_error)
+{
+    APP_ERROR_HANDLER(nrf_error);
+}
+
+void conn_params_init(void)
+{
+    ret_code_t             err_code;
+    ble_conn_params_init_t cp_init;
+
+    memset(&cp_init, 0, sizeof(cp_init));
+
+    cp_init.p_conn_params                  = NULL;
+    cp_init.first_conn_params_update_delay = FIRST_CONN_PARAMS_UPDATE_DELAY;
+    cp_init.next_conn_params_update_delay  = NEXT_CONN_PARAMS_UPDATE_DELAY;
+    cp_init.max_conn_params_update_count   = MAX_CONN_PARAMS_UPDATE_COUNT;
+    cp_init.start_on_notify_cccd_handle    = BLE_CONN_HANDLE_INVALID; // Start upon connection.
+    cp_init.disconnect_on_fail             = true;
+    cp_init.evt_handler                    = NULL;  // Ignore events.
+    cp_init.error_handler                  = conn_params_error_handler;
+
+    err_code = ble_conn_params_init(&cp_init);
+    APP_ERROR_CHECK(err_code);
+}
+
+
+
+
+static void gatt_init(void) {
+    ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
+    APP_ERROR_CHECK(err_code);
+}
+
 int main(void) {
 
   ret_code_t error_code = NRF_SUCCESS;
@@ -528,40 +685,63 @@ int main(void) {
   analog_in_init();
   //ble_stack_init();
   crypto_init();
-  peer_manager_init();
+  printf("crypto initialized\n");
 
-
-  printf("I'm doing something for sure!\n");
-
-    //Initialize BLE LE Secure Connections
+  //Initialize BLE LE Secure Connections
   error_code = ble_lesc_init();
   APP_ERROR_CHECK(error_code);
-
   printf("ble lesc initialized\n");
+
+  // Initialize power management
+  ret_code_t err_code = NRF_SUCCESS;
+  err_code = nrf_pwr_mgmt_init();
+  APP_ERROR_CHECK(err_code);
+
+  // APP_TIMER_INIT must be called before BLE setup that relies on it
+  initialize_app_timer();
+
+  // Setup BLE and services
+  ble_stack_init();
+  printf("ble stack setup\n");
+  //gap_params_init(); //wrong permissions idk if we need it
+  //printf("gap setup\n");
+  gatt_init();
+  printf("gatt setup\n");
+  services_init();
+  printf("services setup\n");
+  conn_params_init();
+  printf("connection params setup\n");
+
+  //printf("I'm doing something for sure!\n");
+
 
   uint8_t sensor_val = 1; // placeholder 
 
   // Setup BLE
-  simple_ble_app = simple_ble_init(&ble_config);
-
+  //simple_ble_app = simple_ble_init(&ble_config); //TODO: rewrite for galaxy
 
   simple_ble_add_service(&soil_service);
-
-  simple_ble_add_characteristic(1, 1, 0, 0,
+  printf("added service\n");
+  galaxy_add_characteristic(1, 1, 0, 0,
       sizeof(sensor_val), (uint8_t*)&sensor_val,
       &soil_service, &soil_char);
-  
+  printf("added characteristic\n");
 
+  peer_manager_init(); 
+  printf("peer manager setup\n");
   advertising_init();
+  printf("advertising setup\n");
+  
+  //printf("what is happening?\n");  
+
+  //advertising_init();
 
   //printf("advertising initialized\n");
 
-  adv_scan_start();
+  //adv_scan_start();
+  //printf("advertise started\n");
 
-  //connect with raspberry pi 
 
-  //TODO:add service
-  //TODO: add characteristic
 
 
   // Start Advertising
