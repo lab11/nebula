@@ -1,0 +1,5 @@
+w4 4001e504 1
+loadfile ../../nrf52x-base//sdk/nrf5_sdk_15.3.0/components/softdevice/s132/hex/s132_nrf52_6.1.1_softdevice.hex 
+r
+g
+exit
