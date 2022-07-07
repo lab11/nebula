@@ -1,5 +1,0 @@
-r
-loadfile _build/ble_certify_sdk15_s132.hex 
-r
-g
-exit
