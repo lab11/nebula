@@ -43,35 +43,15 @@
 #include "nrf_ble_gatt.h"
 #include "nrf_ble_qwr.h"
 #include "ble_lesc.h"
-
-/*
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-
-#include "app_error.h"
-#include "nrf.h"
-#include "app_util.h"
-#include "nrf_twi_mngr.h"
-#include "nrf_gpio.h"
-#include "nrf_log.h"
-#include "nrf_log_ctrl.h"
-#include "nrf_log_default_backends.h"
-#include "nrf_pwr_mgmt.h"
-#include "nrf_serial.h"
-#include "nrfx_gpiote.h"
-#include "nrfx_saadc.h"
-#include "ble_lesc.h"
-#include "nrf_crypto.h"
-*/
-
-//#include "simple_ble.h"
-//#include "buckler.h"
-
 #include "max44009.h"
 
 #define LESC_DEBUG_MODE                 0                                               /**< Set to 1 to use LESC debug keys, allows you to use a sniffer to inspect traffic. */
 #define LESC_MITM_NC                    1                                               /**< Use MITM (Numeric Comparison). */
+
+#define CENTRAL_SCANNING_LED            BSP_BOARD_LED_0
+#define CENTRAL_CONNECTED_LED           BSP_BOARD_LED_1
+#define PERIPHERAL_ADVERTISING_LED      BSP_BOARD_LED_2
+#define PERIPHERAL_CONNECTED_LED        BSP_BOARD_LED_3
 
 /** @brief The maximum number of peripheral and central links combined. */
 #define NRF_BLE_LINK_COUNT              (NRF_SDH_BLE_PERIPHERAL_LINK_COUNT + NRF_SDH_BLE_CENTRAL_LINK_COUNT)
@@ -142,7 +122,6 @@ static ble_gap_scan_params_t const m_scan_params =
 };
 
 // Intervals for advertising and connections
-
 static simple_ble_config_t ble_config = {
         // c0:98:e5:49:xx:xx
         .platform_id       = 0x49,    // used as 4th octect in device BLE address
@@ -189,6 +168,13 @@ nrf_saadc_value_t sample_value (uint8_t channel) {
   return val;
 }
 
+static char * roles_str[] =
+{
+    "INVALID_ROLE",
+    "CENTRAL",
+    "PERIPHERAL",
+};
+
 //function to initialize RTT library
 static void rtt_init(void) {
   // Initialize error code
@@ -233,7 +219,7 @@ static void adv_scan_start(void)
 {
     ret_code_t err_code;
 
-    //scan_start();
+    scan_start();
 
     // Turn on the LED to signal scanning.
     //bsp_board_led_on(CENTRAL_SCANNING_LED);
@@ -246,6 +232,98 @@ static void adv_scan_start(void)
 
     printf("advertising\n");
     NRF_LOG_INFO("Advertising");
+}
+
+/**@brief Function for assigning new connection handle to available instance of QWR module.
+ *
+ * @param[in] conn_handle New connection handle.
+ */
+static void multi_qwr_conn_handle_assign(uint16_t conn_handle)
+{
+    for (uint32_t i = 0; i < NRF_BLE_LINK_COUNT; i++)
+    {
+        if (m_qwr[i].conn_handle == BLE_CONN_HANDLE_INVALID)
+        {
+            ret_code_t err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr[i], conn_handle);
+            APP_ERROR_CHECK(err_code);
+            break;
+        }
+    }
+}
+
+/**@brief Function for handling BLE Stack events common to both the central and peripheral roles.
+ * @param[in] conn_handle Connection Handle.
+ * @param[in] p_ble_evt  Bluetooth stack event.
+ */
+static void on_ble_evt(uint16_t conn_handle, ble_evt_t const * p_ble_evt)
+{
+    char        passkey[BLE_GAP_PASSKEY_LEN + 1];
+    uint16_t    role = ble_conn_state_role(conn_handle);
+
+    switch (p_ble_evt->header.evt_id)
+    {
+        case BLE_GAP_EVT_CONNECTED:
+            m_connected_peers[conn_handle].is_connected = true;
+            m_connected_peers[conn_handle].address = p_ble_evt->evt.gap_evt.params.connected.peer_addr;
+            multi_qwr_conn_handle_assign(conn_handle);
+            break;
+
+        case BLE_GAP_EVT_DISCONNECTED:
+            memset(&m_connected_peers[conn_handle], 0x00, sizeof(m_connected_peers[0]));
+            break;
+
+        case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+            NRF_LOG_INFO("%s: BLE_GAP_EVT_SEC_PARAMS_REQUEST", nrf_log_push(roles_str[role]));
+            break;
+
+        case BLE_GAP_EVT_PASSKEY_DISPLAY:
+            memcpy(passkey, p_ble_evt->evt.gap_evt.params.passkey_display.passkey, BLE_GAP_PASSKEY_LEN);
+            passkey[BLE_GAP_PASSKEY_LEN] = 0x00;
+            NRF_LOG_INFO("%s: BLE_GAP_EVT_PASSKEY_DISPLAY: passkey=%s match_req=%d",
+                         nrf_log_push(roles_str[role]),
+                         nrf_log_push(passkey),
+                         p_ble_evt->evt.gap_evt.params.passkey_display.match_request);
+
+            if (p_ble_evt->evt.gap_evt.params.passkey_display.match_request)
+            {
+                on_match_request(conn_handle, role);
+            }
+            break;
+
+        case BLE_GAP_EVT_AUTH_KEY_REQUEST:
+            NRF_LOG_INFO("%s: BLE_GAP_EVT_AUTH_KEY_REQUEST", nrf_log_push(roles_str[role]));
+            break;
+
+        case BLE_GAP_EVT_LESC_DHKEY_REQUEST:
+            NRF_LOG_INFO("%s: BLE_GAP_EVT_LESC_DHKEY_REQUEST", nrf_log_push(roles_str[role]));
+            break;
+
+         case BLE_GAP_EVT_AUTH_STATUS:
+             NRF_LOG_INFO("%s: BLE_GAP_EVT_AUTH_STATUS: status=0x%x bond=0x%x lv4: %d kdist_own:0x%x kdist_peer:0x%x",
+                          nrf_log_push(roles_str[role]),
+                          p_ble_evt->evt.gap_evt.params.auth_status.auth_status,
+                          p_ble_evt->evt.gap_evt.params.auth_status.bonded,
+                          p_ble_evt->evt.gap_evt.params.auth_status.sm1_levels.lv4,
+                          *((uint8_t *)&p_ble_evt->evt.gap_evt.params.auth_status.kdist_own),
+                          *((uint8_t *)&p_ble_evt->evt.gap_evt.params.auth_status.kdist_peer));
+            break;
+
+        case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
+        {
+            NRF_LOG_DEBUG("PHY update request.");
+            ble_gap_phys_t const phys =
+            {
+                .rx_phys = BLE_GAP_PHY_AUTO,
+                .tx_phys = BLE_GAP_PHY_AUTO,
+            };
+            ret_code_t err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
+            APP_ERROR_CHECK(err_code);
+        } break;
+
+        default:
+            // No implementation needed.
+            break;
+    }
 }
 
 //function for checking if a link already exists with a new connected peer. From ble_app_multirole_lesc
@@ -270,7 +348,6 @@ static bool is_already_connected(ble_gap_addr_t const * p_connected_adr)
 }
 
 /**@brief Connection parameters requested for connection. */
-
 static ble_gap_conn_params_t const m_connection_param =
 {
     MIN_CONNECTION_INTERVAL,
@@ -279,15 +356,7 @@ static ble_gap_conn_params_t const m_connection_param =
     SUPERVISION_TIMEOUT
 };
 
-static char * roles_str[] =
-{
-    "INVALID_ROLE",
-    "CENTRAL",
-    "PERIPHERAL",
-};
-
 //@brief Function for handling File Data Storage events.
-
 static void fds_evt_handler(fds_evt_t const * const p_fds_evt)
 {
     if (p_fds_evt->id == FDS_EVT_GC)
@@ -298,7 +367,6 @@ static void fds_evt_handler(fds_evt_t const * const p_fds_evt)
 
 
 //@brief Function for handling Peer Manager events.
-
 static void pm_evt_handler(pm_evt_t const * p_evt)
 {
     ret_code_t err_code;
@@ -405,7 +473,6 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
 
 
 // Function for handling advertising events.
-
 static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
 {
     switch (ble_adv_evt)
@@ -428,7 +495,6 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
 }
 
 //Function for initializing the Peer Manager.
-
 static void peer_manager_init(void)
 {
     ble_gap_sec_params_t sec_params;
@@ -670,8 +736,6 @@ void conn_params_init(void)
 }
 
 
-
-
 static void gatt_init(void) {
     ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
     APP_ERROR_CHECK(err_code);
@@ -712,10 +776,7 @@ int main(void) {
   conn_params_init();
   printf("connection params setup\n");
 
-  //printf("I'm doing something for sure!\n");
-
-
-  uint8_t sensor_val = 1; // placeholder 
+  uint8_t sensor_val = 1; // placeholder data
 
   // Setup BLE
   //simple_ble_app = simple_ble_init(&ble_config); //TODO: rewrite for galaxy
@@ -738,10 +799,8 @@ int main(void) {
 
   //printf("advertising initialized\n");
 
-  //adv_scan_start();
-  //printf("advertise started\n");
-
-
+  adv_scan_start();
+  printf("advertise started\n");
 
 
   // Start Advertising

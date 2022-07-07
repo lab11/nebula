@@ -34,6 +34,7 @@ BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/c
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/ble/peer_manager/*.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/ble/ble_db_discovery/*.c)
 BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/fds/*.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/boards/*.c)
 
 #BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
 #BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
@@ -147,6 +148,8 @@ BOARD_SOURCES += \
 	uECC.c\
 	nrf_drv_rng.c\
 	nrfx_rng.c\
+	boards.c\
+	galaxy_ble.c\
 
 ifneq ($(SOFTDEVICE_MODEL),blank)
 BOARD_SOURCES += \
