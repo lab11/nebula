@@ -18,6 +18,7 @@ import macaddress
 
 import pickle5 as pickle
 from matplotlib import pyplot as plt
+from scipy import signal
 
 # Puts all the time and rssi values for each unique MAC into lists.
 def get_aggregates(df):
@@ -160,15 +161,20 @@ if __name__ == '__main__':
     aParser.add_argument('--figs_dir', type=str, default='./figs', help='Path to a directory where we store the generated figures.')
 
     args = aParser.parse_args()
+    print("in main")
 
     # Crawl through a directory of directories of log files and process them all into pickles.
     for aDir in glob.glob('{}/*'.format(args.logs_dir)):
+        print("in for loop")
         location_name = aDir.split('/')[-1]
         df = read_files(aDir)
         print(df.describe())
         print("Starting feature extraction..")
         df.reset_index(drop=True)
         df = analyze_data(df)
+        #save df to csv 
+        #df.to_csv('analyzed_data.csv')
+        #print("saved to csv")
         pkl_file = "{}/{}.pkl".format(args.pkls_dir, location_name)
         print("Writing pickled logs to {}.".format(pkl_file))
         df.to_pickle(pkl_file)
@@ -227,6 +233,47 @@ if __name__ == '__main__':
 
         # Save our figure.
         plt.savefig("{}/{}.png".format(args.figs_dir, location))
+        plt.close()
+
+    # Crawl through the pickles and generates RSSI figures for each pickle.
+    for aPickle in glob.glob('{}/*.pkl'.format(args.pkls_dir)):
+        # Read in our pickle.
+        dfBoi = read_pickle_to_df(aPickle)
+        location = aPickle.split('/')[-1].split('.')[0]
+
+        #print the columns / figure info
+        print(list(dfBoi.columns.values))
+        print("Generate a new figure to show how RSSI could link over time")
+
+        fig = plt.figure(figsize=(20,15))
+        plt.xlabel('Time (min)')
+        plt.ylabel('RSSI')
+
+        #colors for each MAC 
+        colors = ['b', 'g', 'r', 'c', 'm', 'y']
+        numColors = len(colors)
+
+        # Iterate through all the MACs.
+        for i in tqdm(range(len(dfBoi))):
+            macID = dfBoi.iloc[i]['mac']
+            rssi_list = dfBoi.iloc[i]['rssi']
+            time = dfBoi.iloc[i]['time']
+            timeMin = [x / 60 for x in time]
+
+            #TODO convert to real time and figure out how frequently we get RSSI
+            # filter out macs that we get for longer than 20min and shorter than 10min to get the rotators
+
+            if ((len(rssi_list) > 30) & (len(rssi_list) < 300)):
+                #filter noise from RSSI 
+                b,a = signal.butter(8,0.020)
+                print(len(rssi_list))
+                rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=25)
+                plt.plot(timeMin,rssi_filtered)
+
+            #print(rssi_list)
+            #print(macID)
+
+        plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
         plt.close()
 
 
