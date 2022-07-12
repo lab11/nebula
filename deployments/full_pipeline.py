@@ -253,22 +253,41 @@ if __name__ == '__main__':
         colors = ['b', 'g', 'r', 'c', 'm', 'y']
         numColors = len(colors)
 
+        minTime = min(dfBoi.iloc[0]['time'])
+        maxTime = max(dfBoi.iloc[0]['time'])
+        for i in tqdm(range(len(dfBoi))):
+            minTimeTemp = min(dfBoi.iloc[i]['time'])
+            maxTimeTemp = max(dfBoi.iloc[i]['time'])
+            if minTimeTemp < minTime:
+                minTime = minTimeTemp
+            if maxTimeTemp > maxTime:
+                maxTime = maxTimeTemp
+        
+        maxTimeSec = maxTime - minTime
+        maxTimeMin = maxTimeSec / 60
+
         # Iterate through all the MACs.
         for i in tqdm(range(len(dfBoi))):
             macID = dfBoi.iloc[i]['mac']
             rssi_list = dfBoi.iloc[i]['rssi']
             time = dfBoi.iloc[i]['time']
-            timeMin = [x / 60 for x in time]
+            timeSec = [x - minTime for x in time]
+            timeMin = [x / 60 for x in timeSec]
 
             #TODO convert to real time and figure out how frequently we get RSSI
-            # filter out macs that we get for longer than 20min and shorter than 10min to get the rotators
-
-            if ((len(rssi_list) > 30) & (len(rssi_list) < 300)):
-                #filter noise from RSSI 
-                b,a = signal.butter(8,0.020)
-                print(len(rssi_list))
-                rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=25)
-                plt.plot(timeMin,rssi_filtered)
+            # filter out macs that we get for longer than 30min and shorter than 7 ish min to get the rotators
+            exposureTimeMin = timeMin[-1]-timeMin[0]
+            if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 8)):
+                variation = np.std(rssi_list)
+                if (variation > 5) & (variation < 8):
+                    if (timeSec[0] > 3) & (timeMin[-1] < 57):
+                        b,a = signal.butter(8,0.015)
+                        #print(timeMin[0])
+                        #print(len(rssi_list))
+                        #print(exposureTimeMin)
+                        #print(variation)
+                        rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=25)
+                        plt.plot(timeMin,rssi_filtered)
 
             #print(rssi_list)
             #print(macID)
