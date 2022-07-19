@@ -8,3 +8,5 @@ chopped_mules/
 *.swp
 *.log*
 *.zip
+.DS_Store
+scratch.ipynb
