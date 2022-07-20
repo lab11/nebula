@@ -77,7 +77,7 @@ int main(void) {
   //TODO: connect and send data 
 
   // Start Advertising
-  //galaxy_ble_adv_only_name();
+  galaxy_ble_adv_only_name();
 
   while(1) {
     power_manage();
