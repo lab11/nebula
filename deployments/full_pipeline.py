@@ -274,7 +274,6 @@ if __name__ == '__main__':
             timeSec = [x - minTime for x in time]
             timeMin = [x / 60 for x in timeSec]
 
-            #TODO convert to real time and figure out how frequently we get RSSI
             # filter out macs that we get for longer than 30min and shorter than 7 ish min to get the rotators
             exposureTimeMin = timeMin[-1]-timeMin[0]
             if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 8)):
@@ -288,9 +287,6 @@ if __name__ == '__main__':
                         #print(variation)
                         rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=25)
                         plt.plot(timeMin,rssi_filtered)
-
-            #print(rssi_list)
-            #print(macID)
 
         plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
         plt.close()
