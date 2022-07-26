@@ -2,6 +2,7 @@ from builtins import breakpoint
 import multiprocessing as mp
 import pandas.testing as pdt
 from dateutil import parser
+from datetime import datetime
 import os
 import numpy as np
 import pandas as pd
@@ -9,12 +10,14 @@ import threading
 from tqdm import tqdm
 import pdb
 import re
+import sys
 
 import glob
 import argparse
 
 import pickle5 as pickle
 from matplotlib import pyplot as plt
+from matplotlib import dates as md
 
 # Puts all the time and rssi values for each unique mac_hash into lists.
 def get_log_df(data_path):
@@ -52,19 +55,19 @@ def calculate_interactions(df, maxgap=10.1, mincon=2.5, col='ts'):
     smalldf = smalldf.sort_values('time')
     smalldf['iit'] = smalldf.time.diff()
 
-    possible_gaps = np.where(smalldf.iit > maxgap)[0]
+    possible_gaps = np.where(smalldf.iit > maxgap * 1000)[0]
     intervals = []
     start_time = smalldf.time[0]
 
     for next_index in possible_gaps:
       end_time = smalldf.time[next_index-1] 
-      if end_time - start_time > mincon:
+      if end_time - start_time > mincon * 1000:
         intervals.append([start_time, end_time])
       start_time = smalldf.time[next_index]
     
     # get the last interaction as well
     end_time = smalldf.time[len(smalldf.time)-1]
-    if end_time - start_time > mincon:
+    if end_time - start_time > mincon * 1000:
       intervals.append([start_time, end_time])
       if start_time < min_time:
         min_time = start_time 
@@ -131,18 +134,23 @@ if __name__ == '__main__':
         # Set up things to draw individual interactions over time.
         colors = ['b', 'g', 'r', 'c', 'm', 'y']
         numColors = len(colors)
-        top_ax.set_title('Interaction intervals for various seen devices at {} (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-        top_ax.set_xlabel('Time (sec)')
+        top_ax.set_title('Interaction intervals for seen devices at {} (Max advertising gap = {}s, Min connection duration = {}s)'.format(location, args.max_gap, args.min_con))
+        top_ax.set_xlabel('Time')
 
         # Set up things to count the number of concurrent interactions over time.
         num_bins = 10000
         period = (max_time - min_time) / num_bins
         interaction_count = np.zeros(num_bins + 1)
-        bottom_ax.set_title('Number of concurrent interactions at {} over time (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-        bottom_ax.set_xlabel('Time (sec)')
+        bottom_ax.set_title('Number of concurrent interactions at {} (Max advertising gap = {}s, Min connection duration = {}s)'.format(location, args.max_gap, args.min_con))
+        bottom_ax.set_xlabel('Time')
         bottom_ax.set_ylabel('Number of concurrent interactions')
         bottom_ax.set_yscale('symlog')
         bottom_ax.grid(which='both', alpha=0.3)
+
+        # JL: timestamp shenanigans
+        xfmt = md.DateFormatter('%I:%M%p')
+        top_ax.xaxis.set_major_formatter(xfmt)
+        bottom_ax.xaxis.set_major_formatter(xfmt)
 
         # Iterate through all the MACs.
         for i in tqdm(range(len(dfBoi))):
@@ -152,11 +160,17 @@ if __name__ == '__main__':
             
             # Plot and record the interactions from useful MACs.
             for interaction in interaction_list:
-                top_ax.plot(interaction, [i, i], 'x-', color=colors[i % numColors])
+                #top_ax.plot(interaction, [i, i], 'x-', color=colors[i % numColors])
+
+                interaction_dates = [datetime.fromtimestamp(x/1000.0) for x in interaction]
+                top_ax.plot(interaction_dates, [i, i], 'x-', color=colors[i % numColors])
                 interaction_count[int((interaction[0]-min_time)/period):int((interaction[1]-min_time)/period)] += 1
 
         # Plot the count of concurrent interaction times.
-        bottom_ax.plot(np.linspace(min_time, max_time, num_bins+1), interaction_count)
+        bottom_ax.plot(
+            [datetime.fromtimestamp(x/1000.0) for x in np.linspace(min_time, max_time, num_bins+1)],
+            interaction_count
+        )
 
         # Save our figure.
         plt.savefig(fig_file)

@@ -2,6 +2,7 @@ from builtins import breakpoint
 import multiprocessing as mp
 import pandas.testing as pdt
 from dateutil import parser
+from datetime import datetime
 import os
 import numpy as np
 import pandas as pd
@@ -18,6 +19,7 @@ import macaddress
 
 import pickle5 as pickle
 from matplotlib import pyplot as plt
+from matplotlib import dates as md
 
 # Puts all the time and rssi values for each unique MAC into lists.
 def get_aggregates(df):
@@ -191,23 +193,28 @@ if __name__ == '__main__':
         grid = plt.GridSpec(4, 1, hspace=0.3)
         top_ax = fig.add_subplot(grid[:3, 0])
         bottom_ax = fig.add_subplot(grid[3, 0])
-        
+
         # Set up things to draw individual interactions over time.
         plotted = 0
         colors = ['b', 'g', 'r', 'c', 'm', 'y']
         numColors = len(colors)
-        top_ax.set_title('Interaction intervals for various MAC addresses at {} (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-        top_ax.set_xlabel('Time (sec)')
+        top_ax.set_title('Interaction intervals for MAC addresses at {} (Max advertising gap = {}s, Min connection duration = {}s)'.format(location, args.max_gap, args.min_con))
+        top_ax.set_xlabel('Time')
 
         # Set up things to count the number of concurrent interactions over time.
         num_bins = 10000
         period = (max_time - min_time) / num_bins
         interaction_count = np.zeros(num_bins + 1)
-        bottom_ax.set_title('Number of concurrent interactions at {} over time (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-        bottom_ax.set_xlabel('Time (sec)')
+        bottom_ax.set_title('Number of concurrent interactions at {} (Max advertising gap = {}s, Min connection duration = {}s)'.format(location, args.max_gap, args.min_con))
+        bottom_ax.set_xlabel('Time')
         bottom_ax.set_ylabel('Number of concurrent interactions')
         bottom_ax.set_yscale('symlog')
         bottom_ax.grid(which='both', alpha=0.3)
+
+        # JL: timestamp shenanigans
+        xfmt = md.DateFormatter('%I:%M%p')
+        top_ax.xaxis.set_major_formatter(xfmt)
+        bottom_ax.xaxis.set_major_formatter(xfmt)
 
         # Iterate through all the MACs.
         for i in tqdm(range(len(dfBoi))):
@@ -218,12 +225,22 @@ if __name__ == '__main__':
             # Plot and record the interactions from useful MACs.
             if not find_oui_match(oui_descriptions, macID) and len(interaction_list) > 0:
                 for interaction in interaction_list:
-                    top_ax.plot(interaction, [plotted, plotted], 'x-', color=colors[plotted % numColors])
+                    # JL: try to get the timestamps thing to work
+                    interaction_dates = [datetime.fromtimestamp(x) for x in interaction]
+                    top_ax.plot(interaction_dates, [plotted, plotted], 'x-', color=colors[plotted % numColors])
                     interaction_count[int((interaction[0]-min_time)/period):int((interaction[1]-min_time)/period)] += 1
                 plotted += 1
 
         # Plot the count of concurrent interaction times.
-        bottom_ax.plot(np.linspace(min_time, max_time, num_bins+1), interaction_count)
+        bottom_ax.plot(
+            # JL: moar timestamps
+            [datetime.fromtimestamp(x) for x in np.linspace(
+                min_time,
+                max_time,
+                num_bins+1
+            )],
+            interaction_count
+        )
 
         # Save our figure.
         plt.savefig("{}/{}.png".format(args.figs_dir, location))
