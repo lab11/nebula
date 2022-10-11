@@ -9,7 +9,7 @@ import threading
 from tqdm import tqdm
 import pdb
 import re
-
+from hashlib import sha256
 import glob
 import argparse
 
@@ -29,16 +29,15 @@ def get_log_df(data_path):
 
     print(dfBoi['ts'].head)
     timeJump = max(np.diff(dfBoi['ts']))
+    timeJumpIndex = list(np.diff(dfBoi['ts'])).index(timeJump)
     print("the time jump is ")
     print(timeJump)
 
-    #for index in tqdm(dfBoi.index):
-    #  if dfBoi.loc[index,'ts'] > 1658262724486+73352082:
-    #    dfBoi.loc[index,'ts'] -= timeJump
+    print("the time jump index is ")
+    print(timeJumpIndex)
 
-    dfBoi['ts'][dfBoi['ts'] > 1658262724486+73352082] =  dfBoi['ts'][dfBoi['ts'] > 1658262724486+73352082] - timeJump 
-
-    #dfBoi[dfBoi['ts'] > 1658262724486+73352082] -= timeJump
+    # Removing the large time jump from the data 
+    dfBoi.loc[(dfBoi.index > timeJumpIndex),'ts'] -= timeJump 
     
     # Aggregate time and rssi values together.
     dfBoi = dfBoi.sort_values(['ts'])
@@ -91,6 +90,34 @@ def calculate_interactions(df, maxgap=10.1, mincon=2.5, col='ts'):
 
   return min_time, max_time
 
+# get the mac hashes that the nRF generated
+def ground_truth(df):
+  #The macs we made 
+  #init_mac_possibilities = [b'0xc098e5490000',b'c098e5490000',b'0xC098E5490000',b'c0:98:e5:49:00:00']
+  init_mac = b'0xc098e5490000'
+  ground_truth_hash = []
+  len_ground_truth = len(dfBoi)
+    
+  #for init_mac in init_mac_possibilities:
+    #init_mac.replace(':','')
+  for i in range(50):
+    our_mac_hash = sha256()
+    init_mac_string = str(init_mac)
+    init_mac_forhash = bytes(init_mac_string[4:6]+':'+init_mac_string[6:8]+':'+init_mac_string[8:10]+':'+init_mac_string[10:12]+':'+init_mac_string[12:14]+':'+init_mac_string[14:16] , 'ascii')
+    print(init_mac_forhash)
+    our_mac_hash.update(init_mac_forhash)
+    hash_hex = our_mac_hash.hexdigest()
+    ground_truth_hash.append(hash_hex)
+
+    init_mac_int = int(init_mac, 16)
+    init_mac_int += 1 
+    init_mac = bytes(hex(init_mac_int),'ascii')
+ 
+
+  #print(hash_hex)
+  return ground_truth_hash
+
+
 #######################################################
 
 if __name__ == '__main__':
@@ -123,64 +150,19 @@ if __name__ == '__main__':
         df = get_log_df(aLog)
         df.to_pickle(pkl_file)
 
-    # # Crawl through the pickles and generates figures for each pickle.
-    # for aPickle in glob.glob('{}/*.pkl'.format(args.pkls_dir)):
-    #     # Read in our pickle.
-    #     dfBoi = read_pickle_to_df(aPickle)
-    #     location = aPickle.split('/')[-1].split('.')[0]
-    #     fig_file = "{}/{}.png".format(args.figs_dir, location)
-    #     if os.path.exists(fig_file):
-    #         continue
-        
-    #     # Generate our figure :D
-    #     print("Generating figure for {}.".format(location))
-    #     min_time, max_time = calculate_interactions(dfBoi, maxgap=args.max_gap, mincon=args.min_con)
-        
-    #     # Set up the figure to look nice.
-    #     fig = plt.figure(figsize=(20,15))
-    #     grid = plt.GridSpec(4, 1, hspace=0.3)
-    #     top_ax = fig.add_subplot(grid[:3, 0])
-    #     bottom_ax = fig.add_subplot(grid[3, 0])
-        
-    #     # Set up things to draw individual interactions over time.
-    #     colors = ['b', 'g', 'r', 'c', 'm', 'y']
-    #     numColors = len(colors)
-    #     top_ax.set_title('Interaction intervals for various seen devices at {} (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-    #     top_ax.set_xlabel('Time (sec)')
-
-    #     # Set up things to count the number of concurrent interactions over time.
-    #     num_bins = 10000
-    #     period = (max_time - min_time) / num_bins
-    #     interaction_count = np.zeros(num_bins + 1)
-    #     bottom_ax.set_title('Number of concurrent interactions at {} over time (maxgap = {}s, mincon = {}s)'.format(location, args.max_gap, args.min_con))
-    #     bottom_ax.set_xlabel('Time (sec)')
-    #     bottom_ax.set_ylabel('Number of concurrent interactions')
-    #     bottom_ax.set_yscale('symlog')
-    #     bottom_ax.grid(which='both', alpha=0.3)
-
-    #     # Iterate through all the MACs.
-    #     for i in tqdm(range(len(dfBoi))):
-
-    #         macID = dfBoi.iloc[i]['mac_hash']
-    #         interaction_list = dfBoi.iloc[i]['interactions']
-            
-    #         # Plot and record the interactions from useful MACs.
-    #         for interaction in interaction_list:
-    #             top_ax.plot(interaction, [i, i], 'x-', color=colors[i % numColors])
-    #             interaction_count[int((interaction[0]-min_time)/period):int((interaction[1]-min_time)/period)] += 1
-
-    #     # Plot the count of concurrent interaction times.
-    #     bottom_ax.plot(np.linspace(min_time, max_time, num_bins+1), interaction_count)
-
-    #     # Save our figure.
-    #     plt.savefig(fig_file)
-    #     plt.close()
-
     # Crawl through the pickles and generates RSSI Mac-linking figures for each pickle.
     for aPickle in glob.glob('{}/*.pkl'.format(args.pkls_dir)):
         # Read in our pickle.
         dfBoi = read_pickle_to_df(aPickle)
         location = aPickle.split('/')[-1].split('.')[0]
+
+        # Get the ground truth figure 
+        ground_truth_hash = ground_truth(dfBoi)
+        #print(ground_truth_hash)
+
+        ground_truth_set = set(ground_truth_hash)
+        df_hash_set = set(dfBoi['mac_hash'].values)
+        print("set intersect", ground_truth_set.intersection(df_hash_set))
 
         #print the columns / figure info
         print(list(dfBoi.columns.values))
@@ -195,19 +177,6 @@ if __name__ == '__main__':
         colors = ['b', 'g', 'r', 'c', 'm', 'y']
         numColors = len(colors)
 
-        #fix the time jumping issue 
-        timeJump = 0 
-        for i in tqdm(range(len(dfBoi))):
-          if (len(dfBoi.iloc[i]['ts']) > 4):
-            timeJumpTemp = max(np.diff(dfBoi.iloc[i]['ts']))
-            if timeJumpTemp > timeJump:
-              timeJump = timeJumpTemp
-        
-        print(timeJump)
-        timeWarp = 0 
-        if (timeJump > 12471474):
-          timeWarp = timeJump
-
         minTime = min(dfBoi.iloc[0]['ts'])
         maxTime = max(dfBoi.iloc[0]['ts'])
         for i in tqdm(range(len(dfBoi))):
@@ -218,32 +187,22 @@ if __name__ == '__main__':
             if maxTimeTemp > maxTime:
                 maxTime = maxTimeTemp
         
-        maxTime = maxTime - timeWarp
         maxTimeSec = (maxTime - minTime)/1000
         maxTimeMin = maxTimeSec / 60
 
-        # Iterate through all the MACs.
+        # Iterate through all the hashes.
         for i in tqdm(range(len(dfBoi))):
             macID = dfBoi.iloc[i]['mac_hash']
             rssi_list = dfBoi.iloc[i]['rssi']
             time = dfBoi.iloc[i]['ts']
             timeMS = [x - minTime for x in time]
-            #timeMS[timeMS>]
-            #print(len(timeMSWarped))
-            #timeMSWarpedArr = np.array(timeMSWarped)
-            #timeMSecArr = np.where(timeMSWarpedArr>73352082,timeMSWarpedArr-timeWarp,timeMSWarpedArr)
-            #timeMS = np.ndarray.tolist(timeMSecArr)
-            #timeMS = [x - timeWarp for x in timeMSWarped if (x > 1137)]
-            #print(len(timeMSec))
-            #print(timeMSec)
+
+            #if macID == hash_hex:
+            #  print('yayyy')
             
             timeSec = [x / 1000 for x in timeMS]
             timeMin = [x / 60 for x in timeSec]
             timeHour = [x / 60 for x in timeMin]
-
-            #get rid of time jump 
-
-            #breakW
 
             #TODO convert to real time and figure out how frequently we get RSSI
             # filter out macs that we get for longer than 30min and shorter than 7 ish min to get the rotators
@@ -261,7 +220,7 @@ if __name__ == '__main__':
                       #print(variation)
               rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
               if ((np.mean(rssi_list) > -70) & (np.min(rssi_list) > -100)):
-                plt.plot(timeHour,rssi_filtered)
+                plt.plot(timeHour,rssi_list)
 
             #print(rssi_list)
             #print(macID)
@@ -270,5 +229,16 @@ if __name__ == '__main__':
 
         plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
         plt.close()
+
+
+#timeMS[timeMS>]
+#print(len(timeMSWarped))
+#timeMSWarpedArr = np.array(timeMSWarped)
+#timeMSecArr = np.where(timeMSWarpedArr>73352082,timeMSWarpedArr-timeWarp,timeMSWarpedArr)
+#timeMS = np.ndarray.tolist(timeMSecArr)
+#timeMS = [x - timeWarp for x in timeMSWarped if (x > 1137)]
+#print(len(timeMSec))
+#print(timeMSec)
+
 
 
