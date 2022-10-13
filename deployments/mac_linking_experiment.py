@@ -149,6 +149,21 @@ if __name__ == '__main__':
         dfBoi = read_pickle_to_df(aPickle)
         location = aPickle.split('/')[-1].split('.')[0]
 
+        # Get characteristics of each trace 
+        mean_rssi = [np.mean(rssi_list) for rssi_list in dfBoi['rssi'].values]
+        start_time = [time_list[0] for time_list in dfBoi['ts'].values]
+        end_time = [time_list[-1] for time_list in dfBoi['ts'].values]
+        
+        # TODO: add frequency calculation and see if that helps 
+        #average_frequency = 
+        
+        #print(dfBoi.shape)
+        dfBoi.insert(2,'rssi_mean', mean_rssi)
+        dfBoi.insert(3,'start_time', start_time)
+        dfBoi.insert(4,'end_time', end_time)
+        #print(dfBoi.shape)
+        #dfBoi.insert(5,'frequency', len(dfBoi['rssi'].values) / dfBoi['ts'].values[-1] - dfBoi['ts'].values[0])
+
         # Get the ground truth mac hashes 
         ground_truth_hash = ground_truth(dfBoi)
         ground_truth_set = set(ground_truth_hash)
@@ -179,6 +194,7 @@ if __name__ == '__main__':
         fig = plt.figure(figsize=(20,15))
         plt.xlabel('Time (hr)')
         plt.ylabel('RSSI')
+        plt.ylim(-100,-10)
         plt.title('Ground Truth MACs RSSI vs. Time (hr)')
 
         # Plot ground truth 
@@ -191,13 +207,10 @@ if __name__ == '__main__':
             timeSec = [x / 1000 for x in timeMS]
             timeMin = [x / 60 for x in timeSec]
             timeHour = [x / 60 for x in timeMin]
-            #print("time",time)
-            #print("time hr",timeHour)
-            #print("rssis", rssi_list)
-            #print("mac hash", macID)
-            #print("mac",dfBoi.iloc[i]['mac'])
 
-            plt.plot(timeHour,rssi_list)
+            b,a = signal.butter(8,0.025)
+            rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
+            plt.plot(timeHour,rssi_filtered)
         
         plt.savefig("{}/{}_test_rssi_gt.png".format(args.figs_dir, location))
         plt.close()
@@ -211,7 +224,21 @@ if __name__ == '__main__':
         fig = plt.figure(figsize=(20,15))
         plt.xlabel('Time (hr)')
         plt.ylabel('RSSI')
+        plt.ylim(-100,-10)
         plt.title('RSSI vs. Time')
+
+        # Sort by start time 
+        dfBoi = dfBoi.sort_values(['start_time'])
+        dfBoi = dfBoi.reset_index(drop=True)
+
+        # Initialize characteristics to first MAC characteristics 
+        last_macID = dfBoi.iloc[0]['mac_hash']
+        last_mac_mean = np.mean(dfBoi.iloc[0]['rssi'])
+        last_mac_time = dfBoi.iloc[0]['start_time']
+        last_mac_end_time = dfBoi.iloc[0]['end_time']
+
+        # Save the mac links that were found 
+        dfMACLinks = pd.DataFrame()
 
         # Iterate through all the hashes.
         for i in tqdm(range(len(dfBoi))):
@@ -227,28 +254,73 @@ if __name__ == '__main__':
             #if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 8)):
         
             variation = np.std(rssi_list)
-            #if (variation > 5) & (variation < 8):
-            #    if (timeSec[0] > 3) & (timeMin[-1] < 57):
-            #if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 10) & (variation < 6)):
-            #  b,a = signal.butter(8,0.015)
-                      #print(timeMin[0])
-                      #print(len(rssi_list))
-                      #print(exposureTimeMin)
-                      #print(variation)
-            #  rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
+
+            # Check for next possible MAC if not the last 10 elements
+            #if (i != (len(dfBoi)-1) ):
+            #  current_end_time = dfBoi.iloc[i]['end_time']
+            #  current_time_length = dfBoi.iloc[i]['end_time'] - dfBoi.iloc[i]['start_time']
+            #  window_length = 100000 # amount of seconds to check into future
+              
+            #  dfWindow = dfBoi[ (dfBoi['start_time'] > current_end_time) & (dfBoi['start_time'] < current_end_time+window_length)]
+            #  # TODO only add to dfWindow if length and meanrssi is high enough
+            #  dfWindow = dfWindow[dfWindow['rssi_mean']>-50]
+            
+            #  for j in range(len(dfWindow)):
+            #    next_time_length = dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time']
+            #    next_rssi_mean = dfWindow.iloc[j]['rssi_mean']
+            #    next_rssi_list = dfWindow.iloc[j]['rssi']
+
+                #if ( abs(next_time_length - current_time_length) < 10000):
+                #  if (len(next_rssi_list) > 20):
+
+            #    if ((next_rssi_mean > -60) & len(next_rssi_list) > 30):    
+                  #if ( ((len(next_rssi_list) - len(rssi_list)) < 50) & len(next_rssi_list) > 20):
+            #        print('yay found one')
+                    #print(dfWindow.iloc[j]) # TODO: definitely change this...
+            #        dfMACLinks = dfMACLinks.append(dfWindow.iloc[j])
 
             # FILTERED CODE 
-            if ((np.mean(rssi_list) > -50) and (len(rssi_list) >30) ): #& (np.min(rssi_list) > -100)):
-              b,a = signal.butter(8,0.015)
+            if ((np.mean(rssi_list) > -60) and (len(rssi_list) > 30) ): 
+              b,a = signal.butter(8,0.025)
               rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
-              plt.plot(timeHour,rssi_list)
+              plt.plot(timeHour,rssi_filtered)
 
             # UNFILTERED CODE
             #plt.plot(timeHour,rssi_list)
 
+        print("MAC Links", dfMACLinks)
 
         plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
         plt.close()
+
+
+        # plot the MAC Links 
+        dfMACLinks = dfMACLinks.reset_index(drop=True)
+        fig = plt.figure(figsize=(20,15))
+        plt.xlabel('Time (hr)')
+        plt.ylabel('RSSI')
+        plt.ylim(-100,-10)
+        plt.title('Found MAC Links RSSI vs. Time (hr)')
+
+        # Plot ground truth 
+        if len(dfMACLinks) > 5:
+          for i in tqdm(range(len(dfMACLinks))):
+            macID = dfMACLinks.iloc[i]['mac_hash']
+            time = dfMACLinks.iloc[i]['ts']
+            timeMS = [x - minTime for x in time]
+            timeSec = [x / 1000 for x in timeMS]
+            timeMin = [x / 60 for x in timeSec]
+            timeHour = [x / 60 for x in timeMin]
+            rssi_list = dfMACLinks.iloc[i]['rssi']
+
+            b,a = signal.butter(8,0.025)
+            #rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
+            print("ploting", rssi_list)
+            plt.plot(timeHour,rssi_list)
+          
+          plt.savefig("{}/{}_test_rssi_ml.png".format(args.figs_dir, location))
+          plt.close()
+
 
 
 #timeMS[timeMS>]
@@ -259,6 +331,22 @@ if __name__ == '__main__':
 #timeMS = [x - timeWarp for x in timeMSWarped if (x > 1137)]
 #print(len(timeMSec))
 #print(timeMSec)
+
+            #if (variation > 5) & (variation < 8):
+            #    if (timeSec[0] > 3) & (timeMin[-1] < 57):
+            #if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 10) & (variation < 6)):
+            #  b,a = signal.butter(8,0.015)
+                      #print(timeMin[0])
+                      #print(len(rssi_list))
+                      #print(exposureTimeMin)
+                      #print(variation)
+            #  rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
+
+            #print("time",time)
+            #print("time hr",timeHour)
+            #print("rssis", rssi_list)
+            #print("mac hash", macID)
+            #print("mac",dfBoi.iloc[i]['mac'])
 
 
 
