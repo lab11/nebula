@@ -1,3 +1,4 @@
+
 from builtins import breakpoint
 import multiprocessing as mp
 import pandas.testing as pdt
@@ -16,6 +17,8 @@ import argparse
 import pickle5 as pickle
 from matplotlib import pyplot as plt
 from scipy import signal
+
+pd.set_option('max_columns', None)
 
 # Puts all the time and rssi values for each unique mac_hash into lists.
 def get_log_df(data_path):
@@ -113,7 +116,8 @@ def ground_truth(df):
 # add characteristics for each trace (mean, stdev etc)
 def add_characteristics(df):
   # Get characteristics of each trace 
-  mean_rssi = [np.mean(rssi_list) for rssi_list in df['rssi'].values]
+  rssi_mean = [np.mean(rssi_list) for rssi_list in df['rssi'].values]
+  rssi_length = [len(rssi_list) for rssi_list in df['rssi'].values]
   start_time = [time_list[0] for time_list in df['ts'].values]
   end_time = [time_list[-1] for time_list in df['ts'].values]
       
@@ -121,9 +125,10 @@ def add_characteristics(df):
   #average_frequency = 
       
   #print(dfBoi.shape)
-  df.insert(2,'rssi_mean', mean_rssi)
-  df.insert(3,'start_time', start_time)
-  df.insert(4,'end_time', end_time)
+  df.insert(2,'rssi_mean', rssi_mean)
+  df.insert(3,'rssi_length', rssi_length)
+  df.insert(4,'start_time', start_time)
+  df.insert(5,'end_time', end_time)
 
   return df
 
@@ -194,10 +199,91 @@ def plot_all(df, minTime, args, location):
   plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
   plt.close()
 
-  
 
 # TODO: get huristics for each trace and graph them 
 #def get_graph_huristics(df):
+
+
+def link_macs(df):
+  # Sort by start time 
+  df = df.sort_values(['start_time'])
+  df = df.reset_index(drop=True)
+
+  # Initialize list of MACs that have been linked 
+  dfMACLinks = pd.DataFrame()
+
+  for i in tqdm(range(len(df))):
+    # Get MAC characteristics
+    macID = df.iloc[i]['mac_hash']
+    mac_mean = df.iloc[i]['rssi_mean']
+    mac_start_time = df.iloc[i]['start_time']
+    mac_end_time = df.iloc[i]['end_time']
+    mac_length = df.iloc[i]['rssi_length']
+    mac_time = mac_end_time - mac_start_time
+    window_length = 10000 # 10 seconds 
+
+    #dfMACLinks = dfMACLinks.append(df.iloc[i])
+    
+    if (mac_time > 1000 * 60 * 5): # traces have to be at least 5 minutes long to check for a next link
+      # Find all the MACs that are within the window and filter for length and mean
+      dfWindow = df[ (df['start_time'] > mac_end_time) & (df['start_time'] < mac_end_time+window_length)]
+      dfWindow = dfWindow[ (dfWindow['rssi_mean'] > -60)]
+      dfWindow = dfWindow[ (dfWindow['rssi_length']) > 30]
+
+      # Look for candidate next MAC within the window
+      dfWindow = dfWindow.sort_values(['start_time'])
+      dfWindow = dfWindow.reset_index(drop=True) 
+
+      #print ("macID: ", df.iloc[i]['mac_hash'])
+      #print ("current_time_length: ", current_time_length)
+      #dfMACLinks = dfMACLinks.append(df.iloc[i])
+      best_in_window = None
+      for j in range(len(dfWindow)):
+        if (dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time'] > 1000 * 60 * 5):
+          
+          # check lengths 
+          if ( (abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < 300) ) : # & (abs(dfWindow.iloc[j]['rssi_mean'] - mac_mean) < 50)):
+            if (best_in_window is None):
+              best_in_window = dfWindow.iloc[j]
+            else:
+              if ( abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < abs(best_in_window['rssi_length'] - mac_length) ):
+                best_in_window = dfWindow.iloc[j]
+
+      
+      if (best_in_window is not None):
+        dfMACLinks = dfMACLinks.append(best_in_window)
+        dfMACLinks = dfMACLinks.append(df.iloc[i])      
+        
+        #print ("dfWindow: ", dfWindow.iloc[i]['mac_hash'])
+        #if (dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time'] > 10000 * 60 * 5):
+        #dfMACLinks = dfMACLinks.append(dfWindow.iloc[j])
+
+      
+              # Check for next possible MAC if not the last 10 elements
+            #if (i != (len(dfBoi)-1) ):
+            #  current_end_time = dfBoi.iloc[i]['end_time']
+            #  current_time_length = dfBoi.iloc[i]['end_time'] - dfBoi.iloc[i]['start_time']
+            #  window_length = 100000 # amount of seconds to check into future
+              
+            #  dfWindow = dfBoi[ (dfBoi['start_time'] > current_end_time) & (dfBoi['start_time'] < current_end_time+window_length)]
+            #  # TODO only add to dfWindow if length and meanrssi is high enough
+            #  dfWindow = dfWindow[dfWindow['rssi_mean']>-50]
+            
+            #  for j in range(len(dfWindow)):
+            #    next_time_length = dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time']
+            #    next_rssi_mean = dfWindow.iloc[j]['rssi_mean']
+            #    next_rssi_list = dfWindow.iloc[j]['rssi']
+
+                #if ( abs(next_time_length - current_time_length) < 10000):
+                #  if (len(next_rssi_list) > 20):
+
+            #    if ((next_rssi_mean > -60) & len(next_rssi_list) > 30):    
+                  #if ( ((len(next_rssi_list) - len(rssi_list)) < 50) & len(next_rssi_list) > 20):
+            #        print('yay found one')
+                    #print(dfWindow.iloc[j]) # TODO: definitely change this...
+            #        dfMACLinks = dfMACLinks.append(dfWindow.iloc[j])
+
+  return dfMACLinks
 
 #######################################################
 
@@ -263,20 +349,60 @@ if __name__ == '__main__':
         # Plot all RSSI values 
         plot_all(dfBoi, minTime, args, location)
 
-        #TODO: put the mac linking into a new function 
+        # Link MACs
+        dfMACLinks = link_macs(dfBoi)
 
-        # Sort by start time 
-        dfBoi = dfBoi.sort_values(['start_time'])
-        dfBoi = dfBoi.reset_index(drop=True)
+        # plot the MAC Links 
+        dfMACLinks = dfMACLinks.reset_index(drop=True)
+        fig = plt.figure(figsize=(20,15))
+        plt.xlabel('Time (hr)')
+        plt.ylabel('RSSI')
+        plt.ylim(-100,-10)
+        plt.title('Found MAC Links RSSI vs. Time (hr)')
 
-        # Initialize characteristics to first MAC characteristics 
-        last_macID = dfBoi.iloc[0]['mac_hash']
-        last_mac_mean = np.mean(dfBoi.iloc[0]['rssi'])
-        last_mac_time = dfBoi.iloc[0]['start_time']
-        last_mac_end_time = dfBoi.iloc[0]['end_time']
+        # Plot reconstructed ground truth 
+        for i in tqdm(range(len(dfMACLinks))):
+          rssi_list = dfMACLinks.iloc[i]['rssi']
+          macID = dfMACLinks.iloc[i]['mac_hash']
+          time = dfMACLinks.iloc[i]['ts']
+          timeMS = [x - minTime for x in time]
+          timeSec = [x / 1000 for x in timeMS]
+          timeMin = [x / 60 for x in timeSec]
+          timeHour = [x / 60 for x in timeMin]
+          
+          if ((np.mean(rssi_list) > -60) and (len(rssi_list) > 30) ): 
+            b,a = signal.butter(8,0.025)
+            rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
+            #print("ploting", rssi_list)
+            plt.plot(timeHour,rssi_filtered)
+          
+        plt.savefig("{}/{}_test_rssi_ml.png".format(args.figs_dir, location))
+        plt.close()
 
-        # Save the mac links that were found 
-        dfMACLinks = pd.DataFrame()
+
+
+### TRASH CODE BELOW ###
+
+
+ # # Initialize characteristics to first MAC characteristics 
+  # last_macID = df.iloc[0]['mac_hash']
+  # last_mac_mean = df.iloc[0]['rssi_mean']
+  # last_mac_start_time = df.iloc[0]['start_time']
+  # last_mac_end_time = df.iloc[0]['end_time']
+  # last_mac_length = df.iloc[0]['rssi_length']
+
+        # # Sort by start time 
+        # dfBoi = dfBoi.sort_values(['start_time'])
+        # dfBoi = dfBoi.reset_index(drop=True)
+
+        # # Initialize characteristics to first MAC characteristics 
+        # last_macID = dfBoi.iloc[0]['mac_hash']
+        # last_mac_mean = np.mean(dfBoi.iloc[0]['rssi'])
+        # last_mac_time = dfBoi.iloc[0]['start_time']
+        # last_mac_end_time = dfBoi.iloc[0]['end_time']
+
+        # # Save the mac links that were found 
+        # dfMACLinks = pd.DataFrame()
 
             #exposureTimeMin = timeMin[-1]-timeMin[0]
             #if ((len(rssi_list) > 50) & (exposureTimeMin < 30) & (exposureTimeMin > 8)):
@@ -320,33 +446,3 @@ if __name__ == '__main__':
 
         #plt.savefig("{}/{}_test_rssi.png".format(args.figs_dir, location))
         #plt.close()
-
-        # plot the MAC Links 
-        dfMACLinks = dfMACLinks.reset_index(drop=True)
-        fig = plt.figure(figsize=(20,15))
-        plt.xlabel('Time (hr)')
-        plt.ylabel('RSSI')
-        plt.ylim(-100,-10)
-        plt.title('Found MAC Links RSSI vs. Time (hr)')
-
-        # Plot ground truth 
-        if len(dfMACLinks) > 5:
-          for i in tqdm(range(len(dfMACLinks))):
-            macID = dfMACLinks.iloc[i]['mac_hash']
-            time = dfMACLinks.iloc[i]['ts']
-            timeMS = [x - minTime for x in time]
-            timeSec = [x / 1000 for x in timeMS]
-            timeMin = [x / 60 for x in timeSec]
-            timeHour = [x / 60 for x in timeMin]
-            rssi_list = dfMACLinks.iloc[i]['rssi']
-
-            b,a = signal.butter(8,0.025)
-            #rssi_filtered = signal.filtfilt(b,a,rssi_list,padlen=28)
-            print("ploting", rssi_list)
-            plt.plot(timeHour,rssi_list)
-          
-          plt.savefig("{}/{}_test_rssi_ml.png".format(args.figs_dir, location))
-          plt.close()
-
-
-
