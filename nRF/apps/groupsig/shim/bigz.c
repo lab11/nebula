@@ -25,56 +25,86 @@
 //#include "bigf.h"
 
 #define CHECK_ULONG_SIZE(op, ret)   \
-  if (sizeof(op) > sizeof(BN_ULONG)) return ret;
+  if (sizeof(op) > sizeof(BN_ULONG)) return ret; //TODO: replace BN_ULONG with mbedtls type
 
 bigz_t bigz_init() {
-    errno = EINVAL;
-    return IERROR;
+
+  bigz_t bz; 
+  mbedtls_mpi_init(&bz)
+
+  return bz;
+
 }
 
 bigz_t bigz_init_set(bigz_t op) {
-    errno = EINVAL;
-    return IERROR;
+
+  if(!op) {
+    return NULL; 
+  }
+
+  X = bigz_init()
+  mbedtls_mpi_copy(&X, &(const bigz_t)op);
+  return X
 }
 
 bigz_t bigz_init_set_ui(unsigned long int op) {
-    errno = EINVAL;
-    return IERROR;
+
+  bigz_t bz;
+
+  if(!(bz = bigz_init())) {
+    return NULL;
+  }
+
+  if(!mbedtls_mpi_lset(&bz, op)) ( // returns 0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return bz;
+  ) else {
+    return NULL; 
+  }
+
 }
 
 int bigz_free(bigz_t op) {
+  
+  /* If there is nothing to free, ok, but throw warning... */
+  if(!op) {
     errno = EINVAL;
     return IERROR;
+  }
+
+  mbedtls_mpi_free(op);
+  op = NULL;
+  
+  return IOK;
+
 }
 
 int bigz_set(bigz_t rop, bigz_t op) {
 
-    if(!rop || !op) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    rop->copy(op);     
-    return IOK;
+  mbedtls_mpi_copy(&X, &op);
+
+  return IOK;
+
 }
 
 int bigz_set_ui(bigz_t rop, unsigned long int op) {
 
-    if(!rop) {
-        return IERROR;
-    }
+  if(!rop) {
+    return IERROR;
+  }
 
-    // there used to be a sanity check here...
-    
-    if(sizeof(unsigned long int) == sizeof(uint32_t)) {
-        rop->std_words[0] = op;
-    } else if(sizeof(unsigned long int) == sizeof(uint64_t)) {
-        rop->std_dwords[0] = op;
-    } else {
-        return IERROR;
-    }
+  if(!mbedtls_mpi_lset(&rop, op)) ( // returns 0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IERROR;
+  ) else {
+    return IOK; 
+  }  
+
   
-    return IOK;
+
 }
 
 /* int bigz_set_f(bigz_t z, bigf_t f) { */
@@ -92,230 +122,261 @@ int bigz_set_ui(bigz_t rop, unsigned long int op) {
 
 int bigz_sgn(bigz_t op) {
 
-    if(!op) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!op) {
+    errno = EINVAL;
+    return IERROR;
+  }
+  
+  // 1 if X is greater than z, -1 if X is lesser than z or 0 if X is equal to z
+  return mbedtls_mpi_cmp_int(&op, 0) 
 
-    if(op->is_zero()) return 0;
-    // check last bit for negative flag
-    if(op->bit((op->byte_length * 8) - 1)) return -1;
-
-    return 1;
 }
 
 int bigz_cmp(bigz_t op1, bigz_t op2) {
 
-    if(!op1 || !op2) {
-        errno = EINVAL;
-        return IERROR; /* This does not really matter here. What signals the error is errno */
-    }
+  if(!op1 || !op2) {
+    errno = EINVAL;
+    return IERROR; /* This does not really matter here. What signals the error is errno */
+  }
 
-    // TODO SOOOO SKETCH, definitely broken
-    return bigz_t::compare(op1, op2);
+  return mbedtls_mpi_cmp_mpi(&op1, &op2);
+
 }
 
 int bigz_cmp_ui(bigz_t op1, unsigned long int op2) {
 
-    if(!op1) {
-        errno = EINVAL;
-        return IERROR; /* This does not really matter here. What signals the error is errno */
-    }
-
-    bigz_t _op2;
-    if(bigz_set_ui(_op2, op2) != IOK) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  bigz_t _op2;
+  int rc;
   
-    return bigz_cmp(op1, _op2);
+  if(!op1) {
+    errno = EINVAL;
+    return IERROR; /* This does not really matter here. What signals the error is errno */
+  }
+
+  if(!(_op2 = bigz_init_set_ui(op2))) {
+    return IERROR;
+  }
+
+  errno = 0;
+  rc = bigz_cmp(op1, _op2);
+  bigz_free(_op2); _op2 = NULL;
+
+  return rc;
+
 }
 
 int bigz_neg(bigz_t rop, bigz_t op) {
 
-    if(!rop || !op) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    if (bigz_cmp(rop,op)) {
-        rop->copy(op);
-    }
+  if (rop != op) {
+    mbedtls_mpi_copy(&rop, &op);
+  }
 
-    // TODO BROKEN
-    op->bytes[bigz_t::byte_length - 1] |= 1 << 7;
+  if (!mbedtls_mpi_mul_int(rop, -1)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     return IOK;
+  } else {
+    return IERROR;
+  }
+
 }
 
 int bigz_add(bigz_t rop, bigz_t op1, bigz_t op2) {
 
-    if(!rop || !op1 || !op2) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op1 || !op2) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    rop->add(op1, op2);
+  if (!mbedtls_mpi_add_mpi(&rop, &op1, &op2)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     return IOK;
+  } else {
+    return IERROR;
+  }
+
 }
 
 int bigz_add_ui(bigz_t rop, bigz_t op1, unsigned long int op2) {
 
-    if(!rop || !op1) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op1) {
+    errno = EINVAL;
+    return IERROR;
+  } 
 
-    bigz_t _op2;
-    if(bigz_set_ui(_op2, op2) != IOK) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if (rop != op1) {
+    mbedtls_mpi_copy(&rop, &op);
+  }  
 
-    rop->add(op1, _op2);
+  if (!mbedtls_mpi_add_int(&rop, &op1, op2)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     return IOK;
+  } else {
+    return IERROR;
+  }
+
 }
 
 int bigz_sub(bigz_t rop, bigz_t op1, bigz_t op2) {
 
-    if(!rop || !op1 || !op2) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
-    rop->subtract(op1, op2);
+  if(!rop || !op1 || !op2) {
+    errno = EINVAL;
+    return IERROR;    
+  }
+  
+  if (!mbedtls_mpi_sub_mpi(&rop, &op1, &op2)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     return IOK;
+  } else {
+    return IERROR;
+  }
+
 }
 
 int bigz_sub_ui(bigz_t rop, bigz_t op1, unsigned long int op2) {
 
-    if(!rop || !op1) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op1) {
+    errno = EINVAL;
+    return IERROR;    
+  }
 
-    bigz_t _op2;
-    if(bigz_set_ui(_op2, op2) != IOK) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  /* Sanity check */
+  //CHECK_ULONG_SIZE(op2, IERROR);  
 
-    rop->subtract(op1, _op2);
-    return IOK;
+  //if(!BN_copy(rop, op1)) {
+  //  return IERROR;
+  //}
+
+  //if(!BN_sub_word(rop, op2)) {
+  //  return IERROR;      
+  //}
+  //return IOK;
+
+  //TODO
+  
 }
 
-int bigz_mul(bigz_t rop, bigz_t op1, bigz_t op2) {
+int bigz_mul(bigz_t rop, bigz_t op1, bigz_t op2) { //TODO
 
-    if(!rop || !op1 || !op2) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!rop || !op1 || !op2) {
+    errno = EINVAL;
+    return IERROR;    
+  }
 
-    rop->multiply(op1, op2);
-    return IOK;
+  if(!BN_mul(rop, op1, op2, sysenv->big_ctx)) {
+    return IERROR;
+  }
+  
+  return IOK;
+
 }
 
-int bigz_mul_ui(bigz_t rop, bigz_t op1, unsigned long int op2) {
+int bigz_mul_ui(bigz_t rop, bigz_t op1, unsigned long int op2) { //TODO
 
-    if(!rop || !op1) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
-    bigz_t _op2;
-    if(bigz_set_ui(_op2, op2) != IOK) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
-    rop->multiply(op1, _op2);
-    return IOK;
-}
-
-int bigz_tdiv(bigz_t q, bigz_t r, bigz_t D, bigz_t d) {
-
-    if(!D || !d || (!q && !r)) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
-    errno = 0;
-    if(d->is_zero()) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
+  if(!rop || !op1) {
     errno = EINVAL;
     return IERROR;
-
-    /* TODO broke
-    // q, r = D / d
-    if(!BN_div(q, r, D, d)) {
-        return IERROR;    
+  }
+  
+  /* Sanity check */
+  CHECK_ULONG_SIZE(op2, IERROR);  
+  
+  if (rop != op1) {
+    if(!BN_copy(rop, op1)) {
+      return IERROR;
     }
+  }  
+  
+  if(!BN_mul_word(rop, op2)) {
+    return IERROR;      
+  }
+  
+  return IOK;
+  
+}
 
-    return IOK;
-    */
+int bigz_tdiv(bigz_t q, bigz_t r, bigz_t D, bigz_t d) { //TODO
+
+  if(!D || !d || (!q && !r)) {
+    errno = EINVAL;
+    return IERROR;
+  }
+
+  errno = 0;
+  if(!bigz_cmp_ui(d, 0) || errno) {
+    errno = EINVAL;
+    return IERROR;
+  }
+
+  if(!BN_div(q, r, D, d, sysenv->big_ctx)) {
+    return IERROR;    
+  }
+
+  return IOK;
+
 }
 
 int bigz_tdiv_ui(bigz_t q, bigz_t r, bigz_t D, unsigned long int d) {
 
-    if(!D || (!q && !r) || !d) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  bigz_t _d;
+  
+  if(!D || (!q && !r)) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    if(sizeof(unsigned long int) == sizeof(bigz_t::word_t)) {
-        unsigned long int rem = q->divide_word<d>(D); 
-        bigz_set_ui(r, rem);        
-    } else if(sizeof(unsigned long int) == sizeof(uint64_t)) {
-        uint64_t rem = q->divide_std_dword<d>(D);
-        bigz_set_ui(r, rem);
-    } else {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!d) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    return IOK;
+  if(!(_d = bigz_init_set_ui(d))) {
+    return IERROR;
+  }
+
+  if(bigz_tdiv(q, r, D, _d) == IERROR) {
+    bigz_free(_d); _d = NULL;
+    return IERROR;
+  }
+
+  bigz_free(_d); _d = NULL;
+
+  return IOK;
+
+  
 }
 
 int bigz_divisible_p(bigz_t n, bigz_t d) {
 
-    if(!n || !d) {
-        errno = EINVAL;
-        return IERROR;
-    }
-
-    // TODO NEED DIVISION 
-    /*
-    bigz_t r;
-
-    if(!(r = bigz_init())) {
+  bigz_t r;
+  
+  if(!n || !d) {
+    errno = EINVAL;
     return IERROR;
-    }
+  }
 
-    if(!BN_mod(r, n, d, sysenv->big_ctx)) {
+  if(!(r = bigz_init())) {
+    return IERROR;
+  }
+
+  if(!BN_mod(r, n, d, sysenv->big_ctx)) {
     bigz_free(r); r = NULL;
     return IERROR;      
-    }
+  }
 
-    if(BN_is_zero(r)) {
+  if(BN_is_zero(r)) {
     bigz_free(r); r = NULL;
     return 1;
-    }
+  }
 
-    bigz_free(r); r = NULL;
-    */
+  bigz_free(r); r = NULL;
+  
+  return 0;
 
-    return 0;
 }
 
 int bigz_divexact(bigz_t rop, bigz_t n, bigz_t d) {
 
-    errno = EINVAL;
-    return IERROR;
-
-    // TODO
-  /*
   bigz_t r;
 
   if(!rop || !n || !d) {
@@ -335,27 +396,47 @@ int bigz_divexact(bigz_t rop, bigz_t n, bigz_t d) {
   bigz_free(r); r = NULL;  
 
   return IOK;
-  */
+
 }
 
 int bigz_divexact_ui(bigz_t rop, bigz_t n, unsigned long int d) {
 
-    if(!rop || !n) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  bigz_t _d, r;
+  
+  if(!rop || !n) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    rop->divide<d>(n);
-    return IOK;
+  if(!d) {
+    errno = EINVAL;
+    return IERROR;
+  }
+
+  if(!(_d = bigz_init_set_ui(d))) {
+    return IERROR;
+  }
+
+  if(!(r = bigz_init())) {
+    bigz_free(_d); _d = NULL;
+    return IERROR;
+  }
+
+  if(bigz_divexact(rop, n, _d) == IERROR) {
+    bigz_free(r); r = NULL;
+    bigz_free(_d); _d = NULL;
+    return IERROR;
+  }
+
+  bigz_free(r); r = NULL;
+  bigz_free(_d); _d = NULL;
+
+  return IOK;
+
 }
 
 int bigz_mod(bigz_t rop, bigz_t op, bigz_t mod) {
 
-    errno = EINVAL;
-    return IERROR;
-
-    // TODO
-  /*
   if(!rop || !op || !mod) {
     errno = EINVAL;
     return IERROR;    
@@ -366,16 +447,11 @@ int bigz_mod(bigz_t rop, bigz_t op, bigz_t mod) {
   }
   
   return IOK;
-  */
+
 }
 
 int bigz_powm(bigz_t rop, bigz_t base, bigz_t exp, bigz_t mod) {
 
-    errno = EINVAL;
-    return IERROR;    
-
-    // TODO
-  /*
   if(!rop || !base || !exp || !mod) {
     errno = EINVAL;
     return IERROR;    
@@ -386,50 +462,59 @@ int bigz_powm(bigz_t rop, bigz_t base, bigz_t exp, bigz_t mod) {
   }
   
   return IOK;
-  */
 
 }
 
 int bigz_pow_ui(bigz_t rop, bigz_t base, unsigned long int exp) {
 
-    if(!rop) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  bigz_t _exp;
+  
+  if(!rop) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    for (int b = 0; b < sizeof(exp) * 8; b++) {
-        if ((exp >> b) & 0x1) {
-            rop->multiply(base);
-        }
-        base->square();
-    }
+  if(!(_exp = bigz_init_set_ui(exp))) {
+    return IERROR;
+  }
 
-    return IOK;
+  if(!BN_exp(rop, base, _exp, sysenv->big_ctx)) {
+    bigz_free(_exp); _exp = NULL;
+    return IERROR;
+  }
+
+  bigz_free(_exp); _exp = NULL; 
+
+  return IOK;
+
 }
 
 int bigz_ui_pow_ui(bigz_t rop, unsigned long int base, unsigned long int exp) {
 
-    if(!rop) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  bigz_t _base;
+  
+  if(!rop) {
+    errno = EINVAL;
+    return IERROR;
+  }
 
-    bigz_t _base;
-    if(bigz_set_ui(_base, base) == IERROR) {
-        return IERROR;
-    }
+  if(!(_base = bigz_init_set_ui(base))) {
+    return IERROR;
+  }
 
-    if(bigz_pow_ui(rop, _base, exp) == IERROR) {
-        return IERROR;
-    }
+  if(bigz_pow_ui(rop, _base, exp) == IERROR) {
+    bigz_free(_base); _base = NULL;
+    return IERROR;
+  }
 
-    return IOK;
+  bigz_free(_base); _base = NULL;
+  
+  return IOK;
+
 }
 
 int bigz_invert(bigz_t rop, bigz_t op, bigz_t mod) {
 
-    // TODO
-  /*
   if(!rop || !op || !mod) {
     errno = EINVAL;
     return IERROR;    
@@ -440,13 +525,11 @@ int bigz_invert(bigz_t rop, bigz_t op, bigz_t mod) {
   }
   
   return IOK;
-  */
+
 }
 
 int bigz_probab_prime_p(bigz_t n, int reps) {
 
-    // TODO
-  /*
   int rc;
   
   if(!n || !reps) {
@@ -460,14 +543,11 @@ int bigz_probab_prime_p(bigz_t n, int reps) {
   }
 
   return rc;
-  */
 
 }
 
 int bigz_nextprime(bigz_t rop, bigz_t lower) {
 
-    // TODO
-    /*
   size_t bits;
   int cmp;
   
@@ -501,14 +581,11 @@ int bigz_nextprime(bigz_t rop, bigz_t lower) {
   } while(cmp <= 0);
   
   return IOK;
-  */
 
 }
 
 int bigz_gcd(bigz_t rop, bigz_t op1, bigz_t op2) {
 
-    // TODO
-    /*
   if(!rop || !op1 || !op2) {
     errno = EINVAL;
     return IERROR;
@@ -519,18 +596,18 @@ int bigz_gcd(bigz_t rop, bigz_t op1, bigz_t op2) {
   }
   
   return IOK;
-  */
+
 }
 
 size_t bigz_sizeinbits(bigz_t op) {
 
-    if(!op) {
-        errno = EINVAL;
-        return IERROR;
-    }
+  if(!op) {
+    errno = EINVAL;
+    return IERROR;
+  }
+  
+  return BN_num_bits(op);
 
-    // TODO won't work
-    return bigz_t::bits_value;
 }
 
 char* bigz_get_str16(bigz_t op) {
