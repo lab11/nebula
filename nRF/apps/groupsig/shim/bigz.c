@@ -25,7 +25,7 @@
 //#include "bigf.h"
 
 #define CHECK_ULONG_SIZE(op, ret)   \
-  if (sizeof(op) > sizeof(BN_ULONG)) return ret; //TODO: replace BN_ULONG with mbedtls type
+  if (sizeof(op) > sizeof(unsigned long)) return ret; 
 
 bigz_t bigz_init() {
 
@@ -286,7 +286,7 @@ int bigz_mul_ui(bigz_t rop, bigz_t op1, unsigned long int op2) {
   
 }
 
-int bigz_tdiv(bigz_t q, bigz_t r, bigz_t D, bigz_t d) { //TODO
+int bigz_tdiv(bigz_t q, bigz_t r, bigz_t D, bigz_t d) { 
 
   if(!D || !d || (!q && !r)) {
     errno = EINVAL;
@@ -299,15 +299,15 @@ int bigz_tdiv(bigz_t q, bigz_t r, bigz_t D, bigz_t d) { //TODO
     return IERROR;
   }
 
-  if(!BN_div(q, r, D, d, sysenv->big_ctx)) {
-    return IERROR;    
+  if(!mbedtls_mpi_div_mpi(&q, &r, &D, &d)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IOK;
+  } else {
+    return IERROR;
   }
-
-  return IOK;
 
 }
 
-int bigz_tdiv_ui(bigz_t q, bigz_t r, bigz_t D, unsigned long int d) { //TODO
+int bigz_tdiv_ui(bigz_t q, bigz_t r, bigz_t D, unsigned long int d) { 
 
   bigz_t _d;
   
@@ -350,12 +350,12 @@ int bigz_divisible_p(bigz_t n, bigz_t d) { //TODO
     return IERROR;
   }
 
-  if(!BN_mod(r, n, d, sysenv->big_ctx)) {
+  if(mbedtls_mpi_mod_mpi(&r, &n, &d)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     bigz_free(r); r = NULL;
     return IERROR;      
   }
 
-  if(BN_is_zero(r)) {
+  if(mbedtls_mpi_cmp_int(&r, 0)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     bigz_free(r); r = NULL;
     return 1;
   }
@@ -426,55 +426,56 @@ int bigz_divexact_ui(bigz_t rop, bigz_t n, unsigned long int d) {
 
 }
 
-int bigz_mod(bigz_t rop, bigz_t op, bigz_t mod) { //TODO
+int bigz_mod(bigz_t rop, bigz_t op, bigz_t mod) { 
 
   if(!rop || !op || !mod) {
     errno = EINVAL;
     return IERROR;    
   }
-
-  if(!BN_mod(rop, op, mod, sysenv->big_ctx)) {
-    return IERROR;
-  }
   
-  return IOK;
+  if(!mbedtls_mpi_mod_mpi(&rop, &op, &mod)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IERROR;
+  } else {
+    return IOK;
+  }
 
 }
 
-int bigz_powm(bigz_t rop, bigz_t base, bigz_t exp, bigz_t mod) { //TODO
+int bigz_powm(bigz_t rop, bigz_t base, bigz_t exp, bigz_t mod) { 
 
   if(!rop || !base || !exp || !mod) {
     errno = EINVAL;
     return IERROR;    
   }
 
-  if(!BN_mod_exp(rop, base, exp, mod, sysenv->big_ctx) == IERROR) {
+  // apparently setting the NULL value to something can help with speedups for recomputing R*R mod N 
+  if(!mbedtls_mpi_exp_mod(&rop, &base, &exp, &mod, NULL)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IOK;
+  } else {
     return IERROR;
   }
-  
-  return IOK;
 
 }
 
 int bigz_pow_ui(bigz_t rop, bigz_t base, unsigned long int exp) { //TODO
-
-  bigz_t _exp;
   
   if(!rop) {
     errno = EINVAL;
     return IERROR;
   }
-
-  if(!(_exp = bigz_init_set_ui(exp))) {
-    return IERROR;
+  
+  //TODO: check if you can use bigz_mul like this...
+  for (int b = 0; b < sizeof(exp) * 8; b++) {
+    if ((exp >> b) & 0x1) {
+      if (bigz_mul(rop, rop, base) == IERROR) {
+        return IERROR;
+      } 
+    }
+    //Square the base to get to the next bit
+    if (bigz_mul(base, base, base) == IERROR) {
+      return IERROR;
+    }
   }
-
-  if(!BN_exp(rop, base, _exp, sysenv->big_ctx)) {
-    bigz_free(_exp); _exp = NULL;
-    return IERROR;
-  }
-
-  bigz_free(_exp); _exp = NULL; 
 
   return IOK;
 
@@ -511,12 +512,11 @@ int bigz_invert(bigz_t rop, bigz_t op, bigz_t mod) { //TODO
     return IERROR;    
   }
 
-  if(!BN_mod_inverse(rop, op, mod, sysenv->big_ctx)) {
+  if(!mbedtls_mpi_inv_mod(&rop, &op, &mod)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IOK;
+  } else {
     return IERROR;
   }
-  
-  return IOK;
-
 }
 
 int bigz_probab_prime_p(bigz_t n, int reps) {
@@ -528,12 +528,18 @@ int bigz_probab_prime_p(bigz_t n, int reps) {
     return IERROR;
   }
 
-  if((rc = BN_is_prime_ex(n, reps, sysenv->big_ctx, NULL)) == -1) {
-    errno = EINVAL;
+  rc = mbedtls_mpi_is_prime(&n, reps); //TODO: might need p_rng and f_rng idk how to get around this right now
+  if (rc == MBEDTLS_ERR_MPI_ALLOC_FAILED) {
+    return IERROR;
+  } else if (rc == MBEDTLS_ERR_MPI_NOT_ACCEPTABLE) {
+    // is not prime
+    return 0; 
+  } else if (rc == 0) {
+    // is prime with error probability less than 0.25^nchecks 
+    return 1;
+  } else {
     return IERROR;
   }
-
-  return rc;
 
 }
 
@@ -559,8 +565,9 @@ int bigz_nextprime(bigz_t rop, bigz_t lower) {
 
   do {
 
-    if(!BN_generate_prime_ex(rop, (int) bits, 0, NULL, NULL, NULL)) {
-      return IERROR;      
+    // TODO: figure out if flag value actually should be 0 and if we need f_rng and p_rng
+    if(mbedtls_mpi_gen_prime(&rop, (int) bits, 0, NULL, NULL)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+      return IERROR;
     }
 
     errno = 0;
@@ -582,11 +589,11 @@ int bigz_gcd(bigz_t rop, bigz_t op1, bigz_t op2) {
     return IERROR;
   }
 
-  if(!BN_gcd(rop, op1, op2, sysenv->big_ctx)) {
-    return IERROR;     
+  if(!mbedtls_mpi_gcd(&rop, &op1, &op2)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    return IOK;
+  } else {
+    return IERROR;
   }
-  
-  return IOK;
 
 }
 
@@ -597,7 +604,6 @@ size_t bigz_sizeinbits(bigz_t op) {
     return IERROR;
   }
   
-  //return BN_num_bits(op);
   return mbedtls_mpi_bitlen(&op);
 
 }
@@ -609,30 +615,39 @@ char* bigz_get_str16(bigz_t op) { //TODO might need to write a hex to binary fun
     return NULL;
   }
 
-  return BN_bn2hex(op);
+  char buf[MBEDTLS_MPI_RW_BUFFER_SIZE];
+  memset(buf, 0, sizeof(buf));
+  size_t n;
+  return mbedtls_mpi_write_string(&op, 16, buff, sizeof(buff) -2, &n); 
 
 }
 
-int bigz_set_str16(bigz_t rop, char *str) {
+int bigz_set_str16(bigz_t rop, char *str) { //TODO
   
   if(!rop || !str) {
     errno = EINVAL;
     return IERROR;
   }
 
-  if(!BN_hex2bn(&rop, str)) return IERROR;
-  return IOK;
+  if (!mbedtls_mpi_read_string(&op, 16, str); {// base 16 for hex 
+    return IOK;
+  } else {
+    return IERROR;
+  }
 
 }
 
-char* bigz_get_str10(bigz_t op) {
+char* bigz_get_str10(bigz_t op) { //TODO binary to decimal function
 
   if(!op) {
     errno = EINVAL;
     return NULL;
   }
 
-  return BN_bn2dec(op);
+  char buf[MBEDTLS_MPI_RW_BUFFER_SIZE];
+  memset(buf, 0, sizeof(buf));
+  size_t n;
+  return mbedtls_mpi_write_string(&op, 10, buff, sizeof(buff) -2, &n); // base 10 for decimal
 
 }
 
@@ -643,8 +658,10 @@ int bigz_set_str10(bigz_t rop, char *str) {
     return IERROR;
   }
 
-  if(!BN_dec2bn(&rop, str)) return IERROR;
+  if (!mbedtls_mpi_read_string(&op, 10, str)) { // base 10 for decimal 
   return IOK;
+  } else {
+  return IERROR;
 
 }
 
@@ -658,17 +675,17 @@ byte_t* bigz_export(bigz_t op, size_t *length) {
     return NULL;
   }
 
-  _length = BN_num_bytes(op);
+  _length = mbedtls_mpi_size(&op); 
   if(!(bytes = (byte_t *) mem_malloc(sizeof(byte_t)*(_length+1)))) {
     return NULL;
   }
 
   memset(bytes, 0, sizeof(byte_t)*(_length+1));
 
-  /* BN_bn2bin does not store the sign, and we want it */
+  /* bn2bin does not store the sign, and we want it */
   if(bigz_sgn(op) == -1) bytes[0] |= 0x01;
 
-  if(BN_bn2bin(op, &bytes[1]) != _length) {
+  if(mbed_mpi_write_binary(&op, &bytes[1], sizeof(bytes[1]))) { // 0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     mem_free(bytes); bytes = NULL;
     return NULL;
   }
@@ -688,9 +705,9 @@ bigz_t bigz_import(byte_t *bytearray, size_t length) {
     return NULL;
   }
 
-  if(!(bz = BN_bin2bn(&bytearray[1], (int) length-1, NULL))) {
+  if (mbedtls_mpi_read_binary(&bz, &bytearray[1], (int) length-1)) { // 0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
     return NULL;
-  }
+  };
 
   if(bytearray[0] != 0x00) {
     if(bigz_neg(bz, bz) == IERROR) {
@@ -821,11 +838,12 @@ int bigz_urandomb(bigz_t rop, unsigned long int n) {
     return IERROR;    
   }
 
-  if(!BN_rand(rop, (int) n, -1, false)) {
-    return IERROR;    
+  //TODO: idk about how to do int top and bottom like openssl does maybe not necessary/ maybe a speed up?
+  if(!mbedtls_mpi_fill_random(&rop, (size_t) n)) { //TODO needs f_rng and p_rng
+    return IOK;    
+  } else {
+    return IERROR;
   }
-
-  return IOK;
 
 }
 
@@ -841,11 +859,11 @@ int bigz_clrbit(bigz_t op, unsigned long int index) {
     return IERROR;    
   }
 
-  if(!BN_clear_bit(op, (int) index)) {
+  if(!mbedtls_mpi_set_bit(&op, (int) index, 0)) {
+    return IOK;
+  } else {
     return IERROR;
   }
-
-  return IOK;
 
 }
 
@@ -861,7 +879,7 @@ int bigz_tstbit(bigz_t op, unsigned long int index) {
     return -1;    
   }
 
-  return BN_is_bit_set(op, (int) index);
+  return mbedtls_mpi_get_bit(&op, (int) index);
 
 }
 
