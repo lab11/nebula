@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <limits.h>
+#include <ctr_drbg.h>
 #include "sysenv.h"
 #include "bigz.h"
 #include "sys/mem.h"
@@ -26,6 +27,15 @@
 
 #define CHECK_ULONG_SIZE(op, ret)   \
   if (sizeof(op) > sizeof(unsigned long)) return ret; 
+
+mbedtls_ctr_drbg_context ctr_drbg; //The CTR_DRBG context 
+//TODO: idk if this needs to be initialized and seeded like here https://github.com/Mbed-TLS/mbedtls/blob/mbedtls-2.11.0/programs/pkey/rsa_genkey.c
+//mbedtls_ctr_drbg_init(&ctr_drbg);
+//mbedtls_entropy_context entropy;
+//mbedtls_entropy_init( &entropy );
+// ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
+//                               (const unsigned char *) pers,
+//                               strlen( pers ) ) ) != 0 )
 
 bigz_t bigz_init() {
 
@@ -527,8 +537,8 @@ int bigz_probab_prime_p(bigz_t n, int reps) {
     errno = EINVAL;
     return IERROR;
   }
-
-  rc = mbedtls_mpi_is_prime(&n, reps); //TODO: might need p_rng and f_rng idk how to get around this right now
+  //make a context for mbedtls_ctr_drbg_random
+  rc = mbedtls_mpi_is_prime(&n, reps, mbedtls_ctr_drbg_random, &ctr_drbg); 
   if (rc == MBEDTLS_ERR_MPI_ALLOC_FAILED) {
     return IERROR;
   } else if (rc == MBEDTLS_ERR_MPI_NOT_ACCEPTABLE) {
@@ -565,8 +575,8 @@ int bigz_nextprime(bigz_t rop, bigz_t lower) {
 
   do {
 
-    // TODO: figure out if flag value actually should be 0 and if we need f_rng and p_rng
-    if(mbedtls_mpi_gen_prime(&rop, (int) bits, 0, NULL, NULL)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
+    // TODO: figure out if flag value actually should be 0
+    if(mbedtls_mpi_gen_prime(&rop, (int) bits, 0, mbedtls_ctr_drbg_random, &ctr_drbg)) { //0 if successful, MBEDTLS_ERR_MPI_ALLOC_FAILED if memory allocation failed
       return IERROR;
     }
 
@@ -839,7 +849,7 @@ int bigz_urandomb(bigz_t rop, unsigned long int n) {
   }
 
   //TODO: idk about how to do int top and bottom like openssl does maybe not necessary/ maybe a speed up?
-  if(!mbedtls_mpi_fill_random(&rop, (size_t) n)) { //TODO needs f_rng and p_rng
+  if(!mbedtls_mpi_fill_random(&rop, (size_t) n, mbedtls_ctr_drbg_random, &ctr_drbg)) { 
     return IOK;    
   } else {
     return IERROR;
