@@ -29,8 +29,9 @@
 /* Previously, we used PBC, which has become quite outdated since the creation 
    of libgroupsig. However, you might see some similarities in the API we 
    offer. */
-#include "mcl/bn_c384_256.h"
-#include "mcl/bn.h"
+/* Need to replace this with an pairing-based cryptographic library for edge */
+// #include "mcl/bn_c384_256.h"
+// #include "mcl/bn.h"
 
 #ifdef __cplusplus
 extern "C" {

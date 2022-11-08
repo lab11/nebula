@@ -2,14 +2,14 @@
 //
 // Blinks an LED and does a group signature :0
 
-#include <stdbool.h>
-#include <stdint.h>
+// #include <stdbool.h>
+// #include <stdint.h>
 
 #include "nrf.h"
 #include "nrf_delay.h"
 #include "nrf_gpio.h"
 
-#include "groupsig.h"
+// #include "groupsig.h"
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,17)

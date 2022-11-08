@@ -20,9 +20,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <openssl/rand.h>
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
+// #include <openssl/rand.h>
+// #include <openssl/evp.h>
+// #include <openssl/hmac.h>
 
 #include "prf.h"
 #include "sys/mem.h"

@@ -45,7 +45,9 @@ extern "C" {
  * @brief System wide shared data structure.
  */
 typedef struct {
-  big_ctx_t big_ctx; /**< Big numbers context data structure. */
+  /* replace big_ctx_t with mbedtls version*/
+
+  // big_ctx_t big_ctx; /**< Big numbers context data structure. */
   void *data; /**< Any additional data required or that would be useful to be
 		 widely accessible, but specific to individual schemes should
 		 be included here. */

@@ -20,7 +20,7 @@
 #ifndef _BIG_H
 #define _BIG_H
 
-#include <openssl/bn.h>
+// #include <openssl/bn.h>
 #include <mbedtls/bignum.h> //TODO: validate correct place to call this
 
 #ifdef __cplusplus
