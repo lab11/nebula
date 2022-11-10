@@ -218,7 +218,7 @@ def get_graph_huristics(df, gt_or_all):
   start_time_list = df['start_time'].values
   end_time_list = df['end_time'].values
   frequencies = df['frequency'].values
-  time_list = end_time_list - start_time_list
+  time_list = (end_time_list - start_time_list) / (60*1000) #minutes 
 
   #time_list_filtered = [i < 0.5 for i in time_list]
   #frequencies_filtered = [i < 1000 for i in frequencies]
@@ -253,18 +253,20 @@ def link_macs(df):
     mac_end_time = df.iloc[i]['end_time']
     mac_length = df.iloc[i]['rssi_length']
     mac_stdev = df.iloc[i]['rssi_stdev']
+    mac_rssi_list = df.iloc[i]['rssi']
     mac_time = mac_end_time - mac_start_time
-    window_length = 10000 # 10 seconds 
+    mac_period = mac_time / mac_length
+    window_length = 5 * mac_period  
 
     #dfMACLinks = dfMACLinks.append(df.iloc[i])
     
-    # traces have to be at least 5 minutes long to check for a next link
-    if (mac_time > 1000 * 60 * 5): 
+    # traces have to be at least 10 minutes long to check for a next link
+    if (mac_time > 1000 * 60 * 10): 
       # Find all the MACs that are within the window and filter for length and mean
       dfWindow = df[ (df['start_time'] > mac_end_time) & (df['start_time'] < mac_end_time+window_length)]
       dfWindow = dfWindow[ (dfWindow['rssi_mean'] > -50)]
       dfWindow = dfWindow[ (dfWindow['rssi_length']) > 500]
-      dfWindow = dfWindow[ (dfWindow['rssi_stdev']) < 10]
+      dfWindow = dfWindow[ (dfWindow['rssi_stdev']) < 8]
 
       # Look for candidate next MAC within the window
       dfWindow = dfWindow.sort_values(['start_time'])
@@ -272,27 +274,24 @@ def link_macs(df):
 
       #dfMACLinks = dfMACLinks.append(df.iloc[i])
       best_in_window = None
+      last_match_score = 300 #experimentally found to be kind of a reasonable limit
       for j in range(len(dfWindow)):
-        if (dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time'] > 1000 * 60 * 5):
-          
-          # check lengths 
-          if ( (abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < 300)):
-            #check means
-                if (abs(dfWindow.iloc[j]['rssi_mean'] - mac_mean) < 25):
-                   #check stdevs
-                   if (abs(dfWindow.iloc[j]['rssi_stdev'] - mac_stdev) < 5):
-                     #check frequencies
-                     if (abs(dfWindow.iloc[j]['frequency'] - df.iloc[i]['frequency']) < 1):
-                      if (best_in_window is None):
-                        best_in_window = dfWindow.iloc[j]
-                      else:
-                        better_length = abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < abs(best_in_window['rssi_length'] - mac_length)
-                        better_stdev = abs(dfWindow.iloc[j]['rssi_stdev'] - mac_stdev) < abs(best_in_window['rssi_stdev'] - mac_stdev)
-                        better_mean = abs(dfWindow.iloc[j]['rssi_mean'] - mac_mean) < abs(best_in_window['rssi_mean'] - mac_mean)
-                        better_frequncy = abs(dfWindow.iloc[j]['frequency'] - df.iloc[i]['frequency']) < abs(best_in_window['frequency'] - df.iloc[i]['frequency'])
-                        if ( better_length | better_stdev | better_mean | better_frequncy):
-                          best_in_window = dfWindow.iloc[j]
+        #print(len(dfWindow))
+        if (dfWindow.iloc[j]['end_time'] - dfWindow.iloc[j]['start_time'] > 1000 * 60 * 10): #all candidates must be longer than 10min
+            
+          # Check the last 10 data points and their rssi mean, stdev, frequency, and length
+          rssi_list = dfWindow.iloc[j]['rssi']
+          mean_diff = abs(np.mean((mac_rssi_list[-5:]) - np.mean(rssi_list[0:5])))
+          stdev_diff = abs(np.std((mac_rssi_list[-5:]) - np.std(rssi_list[0:5])))#abs(dfWindow.iloc[j]['rssi_stdev'] - mac_stdev)
+          freq_diff = abs(dfWindow.iloc[j]['frequency'] - df.iloc[i]['frequency'])
+          length_diff = (abs(dfWindow.iloc[j]['rssi_length'] - mac_length))
 
+          match_score = mean_diff+stdev_diff+freq_diff+length_diff #TODO think about normalizing to a distribution
+          #print(match_score)
+          if (match_score < last_match_score):
+            last_match_score = match_score
+            best_in_window = dfWindow.iloc[j]
+            #print(match_score)
       
       if (best_in_window is not None):
         dfMACLinks = dfMACLinks.append(best_in_window)
@@ -399,6 +398,12 @@ if __name__ == '__main__':
         plt.close()
 
 
+#TODO jetison the first and last traces? 
+
+#TODO names / headers reread BLE doubt!!! 
+#TODO stability on a small time scale
+#TODO fix histograms 
+
 
 ### TRASH CODE BELOW ###
 
@@ -495,3 +500,26 @@ if __name__ == '__main__':
             #        print('yay found one')
                     #print(dfWindow.iloc[j]) # TODO: definitely change this...
             #        dfMACLinks = dfMACLinks.append(dfWindow.iloc[j])
+
+
+            #
+          
+          
+          # #TODO this sucks fix it 
+          # # check lengths 
+          # if ( (abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < 300)):
+          #   #check means
+          #       if (abs(dfWindow.iloc[j]['rssi_mean'] - mac_mean) < 25):
+          #          #check stdevs
+          #          if (abs(dfWindow.iloc[j]['rssi_stdev'] - mac_stdev) < 5):
+          #            #check frequencies
+          #            if (abs(dfWindow.iloc[j]['frequency'] - df.iloc[i]['frequency']) < 1):
+          #             if (best_in_window is None):
+          #               best_in_window = dfWindow.iloc[j]
+          #             else:
+          #               better_length = abs(dfWindow.iloc[j]['rssi_length'] - mac_length) < abs(best_in_window['rssi_length'] - mac_length)
+          #               better_stdev = abs(dfWindow.iloc[j]['rssi_stdev'] - mac_stdev) < abs(best_in_window['rssi_stdev'] - mac_stdev)
+          #               better_mean = abs(dfWindow.iloc[j]['rssi_mean'] - mac_mean) < abs(best_in_window['rssi_mean'] - mac_mean)
+          #               better_frequncy = abs(dfWindow.iloc[j]['frequency'] - df.iloc[i]['frequency']) < abs(best_in_window['frequency'] - df.iloc[i]['frequency'])
+          #               if ( better_length | better_stdev | better_mean | better_frequncy):
+          #                 best_in_window = dfWindow.iloc[j]
