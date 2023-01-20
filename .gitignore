@@ -10,3 +10,4 @@ chopped_mules/
 *.zip
 .DS_Store
 scratch.ipynb
+_build/

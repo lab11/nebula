@@ -20,7 +20,7 @@
 #ifndef _GS_HASH_H
 #define _GS_HASH_H
 
-#include <openssl/sha.h>
+// #include <openssl/sha.h>
 #include <stdint.h>
 
 #ifdef __cplusplus

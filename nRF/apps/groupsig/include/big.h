@@ -20,7 +20,8 @@
 #ifndef _BIG_H
 #define _BIG_H
 
-#include <openssl/bn.h>
+// #include <openssl/bn.h>
+#include <mbedtls/bignum.h> //TODO: validate correct place to call this
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +41,10 @@ extern "C" {
   /**
    * Big Integer type definition.
    */
-  typedef BigInt<BIG_INT_BITS> *bigz_t;//mpz_t *bigz_t;
+  //typedef BIGNUM *bigz_t;//mpz_t *bigz_t;
+
+  //redefine for mbedtls instead of BIGNUM struct use mbedtls_mpi
+  typedef mbedtls_mpi *bigz_t;
 
   /**
    * Big Float type definition.

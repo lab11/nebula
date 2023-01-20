@@ -78,11 +78,11 @@ sysenv_t* sysenv_init(unsigned int seed) {
   }
 
   memset(sysenv, 0, sizeof(sysenv_t));
-  if(!(sysenv->big_ctx = BN_CTX_new())) {
-    LOG_ERRORCODE(&logger, __FILE__, "sysenv_init", __LINE__, errno, LOGERROR);
-    mem_free(sysenv); sysenv = NULL;
-    return NULL;      
-  }
+  // if(!(sysenv->big_ctx = BN_CTX_new())) {
+  //   LOG_ERRORCODE(&logger, __FILE__, "sysenv_init", __LINE__, errno, LOGERROR);
+  //   mem_free(sysenv); sysenv = NULL;
+  //   return NULL;      
+  // }
   sysenv->data = NULL;
 
   if (_sysenv_seed(sysenv, seed) == IERROR) {
@@ -104,8 +104,8 @@ int sysenv_free(sysenv_t *sysenv) {
   }
 
   /* bigz_randclear(sysenv->big_rand); */
-  BN_CTX_free(sysenv->big_ctx);
-  sysenv->big_ctx = NULL;
+  // BN_CTX_free(sysenv->big_ctx);
+  // sysenv->big_ctx = NULL;
 
   free(sysenv);
 
