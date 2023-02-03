@@ -1,3 +1,0 @@
-r
-savebin _build/downloaded_test.bin 0x3000 0x10
-exit
