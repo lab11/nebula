@@ -4,3 +4,6 @@
 [submodule "ext/jedi-pairing"]
 	path = ext/jedi-pairing
 	url = https://github.com/ucbrise/jedi-pairing
+[submodule "ext/nrf52x-base"]
+	path = ext/nrf52x-base
+	url = https://github.com/lab11/nrf52x-base
