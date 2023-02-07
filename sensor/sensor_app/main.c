@@ -8,6 +8,8 @@
 #include "nrf_delay.h"
 #include "nrf_gpio.h"
 #include "nrf_log.h"
+#include "nrf_crypto.h"
+#include "nrf_crypto_error.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 #include "simple_ble.h"
@@ -38,6 +40,8 @@ int main(void) {
   error_code = NRF_LOG_INIT(NULL);
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
+
+  //error_code = nrf_crypto_init();
 
   printf("Log initialized!\n");
 
