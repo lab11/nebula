@@ -10,10 +10,10 @@ APP_HEADER_PATHS += .
 APP_SOURCE_PATHS += .
 APP_SOURCES = $(notdir $(wildcard ./*.c))
 
-NRF_BASE_DIR ?= ../../nrf52x-base/
+NRF_BASE_DIR ?= ../../ext/nrf52x-base/
 
 # Include board Makefile (if any)
-include ../../nrf_boards/nrf52840dk/Board.mk
+include ../nrf_boards/nrf52840dk/Board.mk
 
 
 # Include main Makefile
