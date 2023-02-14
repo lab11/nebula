@@ -13,6 +13,12 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 #include "simple_ble.h"
+#include "mbedtls/config.h"
+#include "mbedtls/platform.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/ecdh.h"
+#include "mbedtls/error.h"
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
@@ -41,9 +47,27 @@ int main(void) {
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
 
-  //error_code = nrf_crypto_init();
+  // initialize nrf_crypto
+  error_code = nrf_crypto_init();
+  
+  // Set up mbedtls
+  mbedtls_ecdh_context ctx_cli, ctx_srv;
+  mbedtls_entropy_context entropy;
+  mbedtls_ctr_drbg_context ctr_drbg;
 
-  printf("Log initialized!\n");
+  NRF_CRYPTOCELL->ENABLE=1;
+
+  mbedtls_ecdh_init( &ctx_cli );
+  mbedtls_ecdh_init( &ctx_srv );
+  mbedtls_ctr_drbg_init( &ctr_drbg );
+  //mbedtls_entropy_init( &entropy ); entropy poll only seems to work on unix and windows
+
+    // Generate a public key
+  error_code = mbedtls_ecdh_gen_public( &ctx_cli.grp,            // ECP group
+                                  &ctx_cli.d,              // Destination MPI (secret exponent, aka private key)
+                                  &ctx_cli.Q,              // Destination point (public key)
+                                  mbedtls_ctr_drbg_random, // RNG function
+                                  &ctr_drbg );             //RNG parameter
 
   // Initialize.
   nrf_gpio_cfg_output(LED);

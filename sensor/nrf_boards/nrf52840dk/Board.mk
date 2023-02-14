@@ -12,6 +12,16 @@ BOARD_SOURCE_PATHS = $(BOARD_DIR)/.
 BOARD_HEADER_PATHS = $(BOARD_DIR)/.
 BOARD_LINKER_PATHS = $(BOARD_DIR)/.
 BOARD_SOURCES = $(notdir $(wildcard $(BOARD_DIR)/./*.c))
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/platform.c)
+#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/mbedtls/*.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecc.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecdh.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ctr_drbg.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/bignum.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/sha512.c)
+BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/aes.c)
 BOARD_AS = $(notdir $(wildcard $(BOARD_DIR)/./*.s))
 
 # Board-specific configurations
@@ -80,6 +90,9 @@ BOARD_SOURCES += \
 	ble_conn_params.c\
 	ble_srv_common.c\
 	simple_ble.c\
+	nrf_crypto_init.c\
+	nrf_crypto_ecdh.c\
+	nrf_crypto_error.c\
 
 endif
 
