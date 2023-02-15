@@ -13,11 +13,10 @@ APP_SOURCES = $(notdir $(wildcard ./*.c))
 NRF_BASE_DIR ?= ../../ext/nrf52x-base/
 
 # Include board Makefile (if any)
-include ../nrf_boards/nrf52840dk/Board.mk
-
+include ../boards/nrf52840dk/Board.mk
 
 # Include main Makefile
 include $(NRF_BASE_DIR)/make/AppMakefile.mk
 
 #Include includes here as well to capture app specific changes
-include ../nrf_boards/nrf52840dk/Includes.mk
+include ../boards/nrf52840dk/Includes.mk

@@ -9,19 +9,16 @@ BOARD_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # Include any files in this directory in the build process
 BOARD_SOURCE_PATHS = $(BOARD_DIR)/.
+BOARD_SOURCE_PATHS += $(SDK_ROOT)external/mbedtls/
+BOARD_SOURCE_PATHS += $(SDK_ROOT)external/mbedtls/library/
+BOARD_SOURCE_PATHS += $(wildcard $(SDK_ROOT)components/libraries/crypto/backend/*/)
 BOARD_HEADER_PATHS = $(BOARD_DIR)/.
+BOARD_HEADER_PATHS += $(SDK_ROOT)external/mbedtls/
+BOARD_HEADER_PATHS += $(SDK_ROOT)external/mbedtls/include/mbedtls/
+BOARD_HEADER_PATHS += $(wildcard $(SDK_ROOT)components/libraries/crypto/backend/*/)
 BOARD_LINKER_PATHS = $(BOARD_DIR)/.
 BOARD_SOURCES = $(notdir $(wildcard $(BOARD_DIR)/./*.c))
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/platform.c)
-#BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/components/libraries/crypto/backend/mbedtls/*.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecp_curves.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecc.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ecdh.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/ctr_drbg.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/bignum.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/sha512.c)
-BOARD_SOURCES += $(wildcard $(BOARD_DIR)/../../../ext/nrf52x-base/sdk/nrf5_sdk_15.3.0/external/mbedtls/library/aes.c)
+BOARD_SOURCES += $(notdir $(wildcard $(SDK_ROOT)external/mbedtls/library/*.c))
 BOARD_AS = $(notdir $(wildcard $(BOARD_DIR)/./*.s))
 
 # Board-specific configurations
@@ -34,6 +31,7 @@ BOARD_VARS = \
 	USE_APP_CONFIG\
 	DEBUG\
 	DEBUG_NRF\
+	MBEDTLS_CONFIG_FILE=\"$(BOARD_DIR)/mbedtls_config.h\"\
 
 # Default SDK source files to be included
 BOARD_SOURCES += \
