@@ -11,3 +11,4 @@ chopped_mules/
 .DS_Store
 scratch.ipynb
 _build/
+.gdbinit

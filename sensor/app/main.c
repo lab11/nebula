@@ -57,11 +57,15 @@ int main(void) {
     // for now, initialize a client AND server context. Eventually, one of
     // these contexts will move off onto the ESP
     mbedtls_ecdh_init(&ctx_sensor);
-    mbedtls_ecdh_init(&ctx_mule);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_ecp_group_load(&ctx_sensor.grp, MBEDTLS_ECP_DP_CURVE25519);
 
-    // TODO figure out how to hook up the Cryptocell as an entropy source
-    //mbedtls_entropy_init(&entropy); entropy poll only seems to work on unix and windows
+    mbedtls_ecdh_init(&ctx_mule);
+    mbedtls_ecp_group_load(&ctx_mule.grp, MBEDTLS_ECP_DP_CURVE25519);
+
+    // TODO cryptocell entropy?
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_entropy_init(&entropy);
+    error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
     
     // GPIO initialization
     nrf_gpio_cfg_output(LED);
@@ -69,11 +73,10 @@ int main(void) {
     // BLE initialization
     simple_ble_app = simple_ble_init(&ble_config);
 
-    // ^ init ----------- fun program times v
-
     // Start Advertising
     simple_ble_adv_only_name();
 
+    printf("gen 1\n");
     // Generate a public key for the sensor
     error_code = mbedtls_ecdh_gen_public(
         &ctx_sensor.grp,            // Elliptic curve group
@@ -84,6 +87,7 @@ int main(void) {
     );
     APP_ERROR_CHECK(error_code);
 
+    printf("gen 2\n");
     // Generate a key for the mule (XXX shouldn't stay here long-term)
     error_code = mbedtls_ecdh_gen_public(
         &ctx_mule.grp,            // Elliptic curve group
@@ -93,6 +97,8 @@ int main(void) {
         &ctr_drbg
     );
     APP_ERROR_CHECK(error_code);
+
+    printf("main loop starting\n");
 
     // Enter main loop.
     while (1) {
