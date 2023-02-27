@@ -115,6 +115,11 @@ int main(void) {
     );
     APP_ERROR_CHECK(error_code);
 
+    //read in public key from the mule
+    error_code = mbedtls_ecdh_read_public(&ctx_sensor, srv_to_cli, 
+                                    sizeof(srv_to_cli));
+
+
     // Compute shared secrets 
     error_code = mbedtls_ecdh_calc_secret(&ctx_sensor, &cli_olen, secret_cli,
                                    sizeof(secret_cli),
@@ -137,11 +142,20 @@ int main(void) {
     printf("main loop starting\n");
 
     // Enter main loop.
-    while (1) {
+    int loop_counter = 0;
+    while (loop_counter < 10) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
+        loop_counter++;
     }
+
+    // Cleanup 
+    printf("clean up!\n");
+    mbedtls_ecdh_free(&ctx_sensor);
+    mbedtls_ecdh_free(&ctx_mule);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
 }
 
 
