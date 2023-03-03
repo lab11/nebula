@@ -34,6 +34,15 @@ static simple_ble_config_t ble_config = {
         .max_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS),
 };
 
+//Set up BLE service and characteristic for connection with ESP 
+static simple_ble_service_t sensor_service = {{
+    .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
+                0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
+}};
+
+static simple_ble_char_t sensor_state_char = {.uuid16 = 0x8911};
+static bool sensor_state = false;
+
 simple_ble_app_t* simple_ble_app;
 
 int logging_init() {
@@ -42,6 +51,19 @@ int logging_init() {
     //APP_ERROR_CHECK(error_code);
     NRF_LOG_DEFAULT_BACKENDS_INIT();
     return error_code;
+}
+
+void ble_evt_write(ble_evt_t const* p_ble_evt) {
+    if (simple_ble_is_char_event(p_ble_evt, &sensor_state_char)) {
+      printf("Got write to LED characteristic!\n");
+      if (sensor_state) {
+        printf("Turning on LED!\n");
+        nrf_gpio_pin_clear(LED);
+      } else {
+        printf("Turning off LED!\n");
+        nrf_gpio_pin_set(LED);
+      }
+    }
 }
 
 int main(void) {
@@ -132,8 +154,16 @@ int main(void) {
     // GPIO initialization
     nrf_gpio_cfg_output(LED);
 
+    //printf("mbedtls init done\n");
+
     // BLE initialization
     simple_ble_app = simple_ble_init(&ble_config);
+
+    simple_ble_add_service(&sensor_service);
+
+    simple_ble_add_characteristic(1, 1, 0, 0,
+        sizeof(sensor_state), (uint8_t*)&sensor_state,
+        &sensor_service, &sensor_state_char);
 
     // Start Advertising
     simple_ble_adv_only_name();
@@ -147,7 +177,7 @@ int main(void) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
-        loop_counter++;
+        //loop_counter++;
     }
 
     // Cleanup 
