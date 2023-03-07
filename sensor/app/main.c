@@ -34,27 +34,66 @@ static simple_ble_config_t ble_config = {
         .max_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS),
 };
 
+//Set up BLE service and characteristic for connection with ESP 
+static simple_ble_service_t sensor_service = {{
+    .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
+                0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
+}};
+
+static simple_ble_char_t sensor_state_char = {.uuid16 = 0x8911};
+static bool sensor_state = false;
+
 simple_ble_app_t* simple_ble_app;
+
+int logging_init() {
+    ret_code_t error_code = NRF_SUCCESS;
+    error_code = NRF_LOG_INIT(NULL);
+    //APP_ERROR_CHECK(error_code);
+    NRF_LOG_DEFAULT_BACKENDS_INIT();
+    return error_code;
+}
+
+void ble_evt_write(ble_evt_t const* p_ble_evt) {
+    if (simple_ble_is_char_event(p_ble_evt, &sensor_state_char)) {
+      printf("Got write to LED characteristic!\n");
+      if (sensor_state) {
+        printf("Turning on LED!\n");
+        nrf_gpio_pin_clear(LED);
+      } else {
+        printf("Turning off LED!\n");
+        nrf_gpio_pin_set(LED);
+      }
+    }
+}
 
 int main(void) {
 
-    // Logging initialization
+    //setup error code
     ret_code_t error_code = NRF_SUCCESS;
-    error_code = NRF_LOG_INIT(NULL);
-    APP_ERROR_CHECK(error_code);
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
+
+    // Logging initialization
+    error_code = logging_init();
 
     // Crypto initialization
     error_code = nrf_crypto_init();
-    APP_ERROR_CHECK(error_code);
+    //APP_ERROR_CHECK(error_code);
 
+    // Initilize mbedtls 
     mbedtls_ecdh_context ctx_sensor, ctx_mule;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
 
-    NRF_CRYPTOCELL->ENABLE=1;
+    int exit = MBEDTLS_EXIT_FAILURE;
+    size_t srv_olen;
+    size_t cli_olen;
+    unsigned char secret_cli[32] = { 0 };
+    unsigned char secret_srv[32] = { 0 };
+    unsigned char cli_to_srv[36], srv_to_cli[33];
+    const char pers[] = "ecdh";
 
-    // for now, initialize a client AND server context. Eventually, one of
+    //NRF_CRYPTOCELL->ENABLE=1; // idk about this? 
+
+    // Initialize a client AND server context. Eventually, one of
     // these contexts will move off onto the ESP
     mbedtls_ecdh_init(&ctx_sensor);
     mbedtls_ecp_group_load(&ctx_sensor.grp, MBEDTLS_ECP_DP_CURVE25519);
@@ -66,15 +105,15 @@ int main(void) {
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_entropy_init(&entropy);
     error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
-    
-    // GPIO initialization
-    nrf_gpio_cfg_output(LED);
 
-    // BLE initialization
-    simple_ble_app = simple_ble_init(&ble_config);
+    //error_code = mbedtls_ecdh_setup(&ctx_sensor, MBEDTLS_ECP_DP_CURVE25519);
+    // look into porting to nrf sdk 16 if we need this function
 
-    // Start Advertising
-    simple_ble_adv_only_name();
+    //Generate a public key and a TLS ServerKeyExchange payload.
+    error_code = mbedtls_ecdh_make_params(&ctx_sensor, &cli_olen, cli_to_srv,
+                                   sizeof(cli_to_srv),
+                                   mbedtls_ctr_drbg_random, &ctr_drbg);
+
 
     printf("gen 1\n");
     // Generate a public key for the sensor
@@ -98,14 +137,55 @@ int main(void) {
     );
     APP_ERROR_CHECK(error_code);
 
+    //read in public key from the mule
+    error_code = mbedtls_ecdh_read_public(&ctx_sensor, srv_to_cli, 
+                                    sizeof(srv_to_cli));
+
+
+    // Compute shared secrets 
+    error_code = mbedtls_ecdh_calc_secret(&ctx_sensor, &cli_olen, secret_cli,
+                                   sizeof(secret_cli),
+                                   mbedtls_ctr_drbg_random, &ctr_drbg);
+
+    error_code = mbedtls_ecdh_calc_secret(&ctx_mule, &srv_olen, secret_srv,
+                                   sizeof(secret_srv),
+                                   mbedtls_ctr_drbg_random, &ctr_drbg);
+    
+    // GPIO initialization
+    nrf_gpio_cfg_output(LED);
+
+    //printf("mbedtls init done\n");
+
+    // BLE initialization
+    simple_ble_app = simple_ble_init(&ble_config);
+
+    simple_ble_add_service(&sensor_service);
+
+    simple_ble_add_characteristic(1, 1, 0, 0,
+        sizeof(sensor_state), (uint8_t*)&sensor_state,
+        &sensor_service, &sensor_state_char);
+
+    // Start Advertising
+    simple_ble_adv_only_name();
+    
+
     printf("main loop starting\n");
 
     // Enter main loop.
-    while (1) {
+    int loop_counter = 0;
+    while (loop_counter < 10) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
+        //loop_counter++;
     }
+
+    // Cleanup 
+    printf("clean up!\n");
+    mbedtls_ecdh_free(&ctx_sensor);
+    mbedtls_ecdh_free(&ctx_mule);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
 }
 
 
