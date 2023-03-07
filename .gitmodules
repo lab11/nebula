@@ -7,3 +7,6 @@
 [submodule "ext/nrf52x-base"]
 	path = ext/nrf52x-base
 	url = https://github.com/lab11/nrf52x-base
+[submodule "ext/esp-idf"]
+	path = ext/esp-idf
+	url = https://github.com/espressif/esp-idf
