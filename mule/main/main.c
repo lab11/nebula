@@ -11,6 +11,9 @@
 #include "freertos/task.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "esp_log.h"
 
 // BLE headers
 // TODO: non-volatile storage headers?
@@ -257,9 +260,30 @@ void app_main() {
 
     printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
 
+    // Initialize NVS.
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( ret );
+
+    printf("nvs initialized\n");
+
+    // Initialize the NimBLE host configuration.
+    ret = nimble_port_init();
+
+    printf("nimble initialized\n");
+
+    // TODO: host config and call backs 
+    // TODO: app specific tasks 
+    // run thread (nimble_port_freertos_init)
+
     mbedtls_stuff();
+
+    //scan for sensor devices and connect to them
     
-    for (int i = 10; i >= 0; i--) {
+    for (int i = 20; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
