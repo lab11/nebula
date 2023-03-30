@@ -1,2 +1,2 @@
-# galaxy
-Privacy Preserving Data Mule System
+# ext
+External projects / repositories

@@ -1,10 +1,18 @@
-# Build and launch the Docker
+# Galaxy Cloud - Provider and Application Servers
+
+## Build and launch the Docker
 ```bash
 docker build -t my_app .
 docker run -it --rm -p 8000:8000 -e SERVER_MODE=provider my_app
 ```
 
-# HTTPS Get request
+## HTTPS Get request
 ```bash
 http://0.0.0.0:8000/run_provider?a=1
 ```
+
+## Steps for Rust->Python bindings
+
+1. add pyO3 wrappers around functions
+2. run maturin develop
+3. run python script
