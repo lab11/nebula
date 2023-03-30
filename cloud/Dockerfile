@@ -3,14 +3,25 @@
 # Use the official Python image as the base image
 FROM python:3.9
 
+# Get anonymous token package name from Makefile
+ARG TOKENLIB_WHL
+
 # Set the working directory
 WORKDIR /app
 
 # Copy the requirements.txt file into the container
 COPY requirements.txt .
 
+# Copy the tokenlib module .whl file into the container
+COPY anonymous-tokens-lib/${TOKENLIB_WHL} .
+
 # Install the required packages
 RUN pip install --no-cache-dir -r requirements.txt
+
+RUN echo $(lsb_release -a)
+
+# Manually install tokenlib module
+RUN pip install --no-cache-dir ${TOKENLIB_WHL}
 
 # Copy the rest of the application code into the container
 COPY . .
