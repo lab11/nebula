@@ -11,8 +11,17 @@ docker run -it --rm -p 8000:8000 -e SERVER_MODE=provider my_app
 http://0.0.0.0:8000/run_provider?a=1
 ```
 
-## Steps for Rust->Python bindings
+## Provider API
 
-1. add pyO3 wrappers around functions
-2. run maturin develop
-3. run python script
+GET public_params --> input: nothing, returns: public parameter payload
+GET sign_tokens --> input: list of blinded tokens, returns: list of signed blinded tokens
+GET redeem_tokens --> input: list of unblinded tokens, returns: count of valid tokens
+
+## App Server API
+
+GET deliver --> input: data payload, returns: unblinded token
+
+## Steps for Rust->Python bindings [JL notes]
+
+1. run maturin develop
+2. run python script
