@@ -13,13 +13,13 @@ http://0.0.0.0:8000/run_provider?a=1
 
 ## Provider API
 
-GET public_params --> input: nothing, returns: public parameter payload
-GET sign_tokens --> input: list of blinded tokens, returns: list of signed blinded tokens
-GET redeem_tokens --> input: list of unblinded tokens, returns: count of valid tokens
+* `GET public_params` --> input: nothing, returns: public parameter payload
+* `GET sign_tokens` --> input: list of blinded tokens, returns: list of signed blinded tokens
+* `GET redeem_tokens` --> input: list of unblinded tokens, returns: count of valid tokens
 
 ## App Server API
 
-GET deliver --> input: data payload, returns: unblinded token
+* `GET deliver` --> input: data payload, returns: unblinded token
 
 ## Steps for Rust->Python bindings [JL notes]
 
