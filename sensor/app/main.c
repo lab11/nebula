@@ -19,6 +19,7 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecdh.h"
 #include "mbedtls/error.h"
+#include "ble_advertising.h"
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
@@ -28,7 +29,7 @@ static simple_ble_config_t ble_config = {
         // c0:98:e5:45:xx:xx
         .platform_id       = 0x42,    // used as 4th octect in device BLE address
         .device_id         = 0xAABB,
-        .adv_name          = "TESS_LAB11", // used in advertisements if there is room
+        .adv_name          = "SENSOR_LAB11", // used in advertisements if there is room
         .adv_interval      = MSEC_TO_UNITS(1000, UNIT_0_625_MS),
         .min_conn_interval = MSEC_TO_UNITS(500, UNIT_1_25_MS),
         .max_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS),
@@ -161,12 +162,16 @@ int main(void) {
 
     simple_ble_add_service(&sensor_service);
 
+    //setup data packet 
+    
+
     simple_ble_add_characteristic(1, 1, 0, 0,
         sizeof(sensor_state), (uint8_t*)&sensor_state,
         &sensor_service, &sensor_state_char);
 
     // Start Advertising
-    simple_ble_adv_only_name();
+    //advertising_init();
+    advertising_start();
     
 
     printf("main loop starting\n");

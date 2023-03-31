@@ -41,7 +41,7 @@ struct ble_hs_cfg;
 union ble_store_value;
 union ble_store_key;
 
-// TESS_LAB11
+// SENSOR_LAB11
 // c0:98:e5:45:aa:bb
 
 //#define BLECENT_SVC_UUID 0x1811 // XXX
@@ -56,7 +56,7 @@ static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
     0x22, 0x22, 0x22, 0x22, 0x33, 0x33, 0x33, 0x33
 );
 
-static const char *tag = "JL_LAB11";
+static const char *tag = "MULE_LAB11";
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
 
@@ -165,12 +165,13 @@ blecent_scan(void)
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-    rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
+    rc = ble_gap_disc(own_addr_type, 5000, &disc_params,
                       mule_ble_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error initiating GAP discovery procedure; rc=%d\n",
                     rc);
     }
+    printf("finished blecent_scan\n");
 }
 
 /**
@@ -202,6 +203,118 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
     //blecent_read_write_subscribe(peer);
 }
 
+int
+ble_uuid_u128(const ble_uuid_t *uuid)
+{
+    //assert(uuid->type == BLE_UUID_TYPE_128);
+
+    return uuid->type == BLE_UUID_TYPE_128 ? BLE_UUID128(uuid)->value : 0;
+}
+
+
+/**
+ * Checks if the specified advertisement looks like a galaxy sensor.
+**/
+static int
+blecent_should_connect(const struct ble_gap_disc_desc *disc)
+{
+    struct ble_hs_adv_fields fields;
+    int rc;
+    int i;
+
+    /* The device has to be advertising connectability. */
+    if (disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
+            disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
+
+        return 0;
+    }
+
+    /* Parse the advertisement data. */
+    rc = ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data);
+    if (rc != 0) {
+        return rc;
+    }
+
+    /* The device has to advertise support for Galaxy
+     * service (0x8911).
+     */
+    printf("num uuids128=%d\n", fields.num_uuids128);
+    printf("num uuids16=%d\n", fields.num_uuids16);
+    printf("num uuids32=%d\n", fields.num_uuids32);
+    for (i = 0; i < fields.num_uuids16; i++) {
+        printf("SOMETHING\n");
+        printf("blecent_should_connect: fields.num_uuids16=%x\n", ble_uuid_u16(&fields.uuids16[i].u));
+        if (ble_uuid_u16(&fields.uuids16[i].u) == 0x180a) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+
+
+/**
+ * Connects to the sender of the specified advertisement of it looks
+ * like a galaxy sensor.  A device is treated as a sensor if it advertises 
+ * connectability and support for galaxy sensor service.
+ */
+static void
+blecent_connect_if_interesting(void *disc)
+{
+    uint8_t own_addr_type;
+    int rc;
+    ble_addr_t *addr;
+
+    /* Don't do anything if we don't care about this advertiser. */
+// #if CONFIG_EXAMPLE_EXTENDED_ADV
+//     if (!ext_blecent_should_connect((struct ble_gap_ext_disc_desc *)disc)) {
+//         return;
+//     }
+// #else
+//     if (!blecent_should_connect((struct ble_gap_disc_desc *)disc)) {
+//         return;
+//     }
+// #endif
+
+    //Don't do anything if it is not a sensor 
+    if (!blecent_should_connect((struct ble_gap_disc_desc *)disc)) {
+        printf("Not a sensor\n");
+        return;
+    }
+
+    /* Scanning must be stopped before a connection can be initiated. */
+    rc = ble_gap_disc_cancel();
+    if (rc != 0) {
+        MODLOG_DFLT(DEBUG, "Failed to cancel scan; rc=%d\n", rc);
+        return;
+    }
+
+    /* Figure out address to use for connect (no privacy for now) */
+    rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
+        return;
+    }
+
+    /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
+     * timeout.
+     */
+#if CONFIG_EXAMPLE_EXTENDED_ADV
+    addr = &((struct ble_gap_ext_disc_desc *)disc)->addr;
+#else
+    addr = &((struct ble_gap_disc_desc *)disc)->addr;
+#endif
+
+    rc = ble_gap_connect(own_addr_type, addr, 30000, NULL,
+                         mule_ble_gap_event, NULL);
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
+                    "addr=%s; rc=%d\n",
+                    addr->type, addr_str(addr->val), rc);
+        return;
+    }
+}
 
 /**
  * The nimble host executes this callback when a GAP event occurs.  The
@@ -224,6 +337,9 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
     struct ble_hs_adv_fields fields;
     int rc;
 
+    //print event type 
+    printf("mule_ble_gap_event: %d\n", event->type);
+
     switch (event->type) {
     case BLE_GAP_EVENT_DISC:
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
@@ -232,14 +348,16 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
             return 0;
         }
 
+        printf("I'm in BLE_GAP_EVENT_DISC\n");
+
         /* An advertisment report was received during GAP discovery. */
         //TODO: add back? 
-        //print_adv_fields(&fields);
+        print_adv_fields(&fields);
 
         /* Try to connect to the advertiser if it looks interesting. */
-        //TODO: Add this function back perhaps or our own
-        //blecent_connect_if_interesting(&event->disc);
-        //return 0;
+        //TODO: change this function to our own
+        blecent_connect_if_interesting(&event->disc);
+        return 0;
 
     case BLE_GAP_EVENT_CONNECT:
         /* A new connection was established or a connection attempt failed. */
@@ -388,8 +506,6 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 }
 
 
-
-
 static void
 blecent_on_reset(int reason)
 {
@@ -512,6 +628,15 @@ void mbedtls_stuff() {
 
 }
 
+void blecent_host_task(void *param)
+{
+    ESP_LOGI(tag, "BLE Host Task Started");
+    /* This function will return only when nimble_port_stop() is executed */
+    nimble_port_run();
+
+    nimble_port_freertos_deinit();
+}
+
 void app_main() {
 
     printf("Hello world!\n");
@@ -559,12 +684,37 @@ void app_main() {
 
     printf("nimble initialized\n");
 
-    // Configure host parameters
+    // Configure NimBLE host parameters
     ble_hs_cfg.reset_cb = blecent_on_reset;
     ble_hs_cfg.sync_cb = blecent_on_sync;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
     printf("host configured\n");
+
+    //Init gatt and device name 
+    int rc;
+
+    rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64);
+    if (rc != 0) {
+        ESP_LOGE(tag, "error initializing gatt server");
+        return;
+    }
+
+    rc = ble_svc_gap_device_name_set("Lab11 Mule");
+    if (rc != 0) {
+        ESP_LOGE(tag, "error setting device name");
+        return;
+    }
+
+    printf("peer configured and device name set\n");
+
+    ble_store_config_init();
+
+    //Start the muling task 
+    nimble_port_freertos_init(blecent_host_task);
+    
+    printf("started connection");
+
 
     // TODO: host config and call backs 
     // TODO: app specific tasks 
