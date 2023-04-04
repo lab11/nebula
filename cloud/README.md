@@ -1,5 +1,11 @@
 # Galaxy Cloud - Provider and Application Servers
 
+## Build and launch using the Makefile
+
+    * `make build    # build the docker image`
+    * `make provider # start provider server`
+    * `make app      # start application server`
+
 ## Build and launch the Docker
 ```bash
 docker build -t my_app .

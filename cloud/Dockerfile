@@ -3,28 +3,31 @@
 # Use the official Python image as the base image
 FROM python:3.9
 
-# Get anonymous token package name from Makefile
-ARG TOKENLIB_WHL
+# Copy external anonymous tokens repo into /ext/
+WORKDIR /ext/anonymous-tokens
+COPY _build/anonymous-tokens .
 
-# Set the working directory
+# Set the working directory for the application
 WORKDIR /app
 
 # Copy the requirements.txt file into the container
 COPY requirements.txt .
 
-# Copy the tokenlib module .whl file into the container
-COPY anonymous-tokens-lib/${TOKENLIB_WHL} .
-
 # Install the required packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN echo $(lsb_release -a)
-
-# Manually install tokenlib module
-RUN pip install --no-cache-dir ${TOKENLIB_WHL}
+# Install nightly Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:$PATH"
+RUN rustup default nightly
 
 # Copy the rest of the application code into the container
 COPY . .
+
+# Build python bindings for token library
+RUN maturin build --manifest-path anonymous-tokens-lib/Cargo.toml --release --out .
+RUN pip install --no-cache-dir anonymous_tokens_lib*.whl
+#RUN pip install --no-cache-dir anonymous_tokens_lib-0.1.0-cp39-cp39-manylinux_2_28_x86_64.whl
 
 # Expose the port the app runs on
 EXPOSE 8000
