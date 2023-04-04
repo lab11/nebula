@@ -43,8 +43,9 @@ union ble_store_key;
 
 // SENSOR_LAB11
 // c0:98:e5:45:aa:bb
+// 0x180A
 
-//#define BLECENT_SVC_UUID 0x1811 // XXX
+#define SENSOR_SVC_UUID 0x180A // This is the UUID for the Galaxy service
 
 static const ble_uuid_t *sensor_svc_uuid = BLE_UUID128_DECLARE(
     0x70, 0x6C, 0x98, 0x41, 0xCE, 0x43, 0x14, 0xA9,
@@ -56,7 +57,7 @@ static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
     0x22, 0x22, 0x22, 0x22, 0x33, 0x33, 0x33, 0x33
 );
 
-static const char *tag = "MULE_LAB11";
+static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
 
@@ -135,31 +136,26 @@ static int mule_ble_on_subscribe(uint16_t conn_haandle, const struct ble_gatt_er
  * Initiates the GAP general discovery procedure.
  */
 static void
-blecent_scan(void)
+sensor_scan(void)
 {
     uint8_t own_addr_type;
     struct ble_gap_disc_params disc_params;
     int rc;
 
-    /* Figure out address to use while advertising (no privacy for now) */
+    //Figure out address to use while advertising TODO: change this??
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
         return;
     }
 
-    /* Tell the controller to filter duplicates; we don't want to process
-     * repeated advertisements from the same device.
-     */
+    //Tell the controller to filter duplicates
     disc_params.filter_duplicates = 1;
 
-    /**
-     * Perform a passive scan.  I.e., don't send follow-up scan requests to
-     * each advertiser.
-     */
+    //Perform a passive scan
     disc_params.passive = 1;
 
-    /* Use defaults for the rest of the parameters. */
+    //Use defaults for the rest of the parameters. 
     disc_params.itvl = 0;
     disc_params.window = 0;
     disc_params.filter_policy = 0;
@@ -171,7 +167,6 @@ blecent_scan(void)
         MODLOG_DFLT(ERROR, "Error initiating GAP discovery procedure; rc=%d\n",
                     rc);
     }
-    printf("finished blecent_scan\n");
 }
 
 /**
@@ -216,7 +211,7 @@ ble_uuid_u128(const ble_uuid_t *uuid)
  * Checks if the specified advertisement looks like a galaxy sensor.
 **/
 static int
-blecent_should_connect(const struct ble_gap_disc_desc *disc)
+sensor_should_connect(const struct ble_gap_disc_desc *disc)
 {
     struct ble_hs_adv_fields fields;
     int rc;
@@ -235,21 +230,42 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
         return rc;
     }
 
-    /* The device has to advertise support for Galaxy
-     * service (0x8911).
-     */
-    printf("num uuids128=%d\n", fields.num_uuids128);
-    printf("num uuids16=%d\n", fields.num_uuids16);
-    printf("num uuids32=%d\n", fields.num_uuids32);
+    //The device has to advertise support for Galaxy services (0x180a).
     for (i = 0; i < fields.num_uuids16; i++) {
-        printf("SOMETHING\n");
-        printf("blecent_should_connect: fields.num_uuids16=%x\n", ble_uuid_u16(&fields.uuids16[i].u));
+        printf("uuid16 is=%x\n", ble_uuid_u16(&fields.uuids16[i].u));
         if (ble_uuid_u16(&fields.uuids16[i].u) == 0x180a) {
             return 1;
         }
     }
 
     return 0;
+}
+
+void mbedtls_init() {
+    int error_code;
+
+    // initialize entropy and seed random generator
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg; 
+
+    mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    if ((error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
+        printf("error at line %d: mbedtls_ctr_drbg_seed returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    // initialize TLS server parameters
+    mbedtls_x509_crt srvcert;
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_pk_context pkey;
+
+    mbedtls_x509_crt_init(&srvcert);
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_pk_init(&pkey);
 }
 
 
@@ -260,26 +276,15 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
  * connectability and support for galaxy sensor service.
  */
 static void
-blecent_connect_if_interesting(void *disc)
+mule_connect_if_sensor(void *disc)
 {
     uint8_t own_addr_type;
     int rc;
     ble_addr_t *addr;
 
-    /* Don't do anything if we don't care about this advertiser. */
-// #if CONFIG_EXAMPLE_EXTENDED_ADV
-//     if (!ext_blecent_should_connect((struct ble_gap_ext_disc_desc *)disc)) {
-//         return;
-//     }
-// #else
-//     if (!blecent_should_connect((struct ble_gap_disc_desc *)disc)) {
-//         return;
-//     }
-// #endif
-
     //Don't do anything if it is not a sensor 
-    if (!blecent_should_connect((struct ble_gap_disc_desc *)disc)) {
-        printf("Not a sensor\n");
+    if (!sensor_should_connect((struct ble_gap_disc_desc *)disc)) {
+        //printf("Not a sensor\n");
         return;
     }
 
@@ -290,21 +295,23 @@ blecent_connect_if_interesting(void *disc)
         return;
     }
 
-    /* Figure out address to use for connect (no privacy for now) */
+    //Start mbedtls handshake to determine if safe to connect
+    mbedtls_init();
+    printf("mbedtls initialized\n");
+
+    //TODO: Verify that sensor/client request is valid
+
+    //Send mule/server hello to client 
+
+    //Figure out address to use for connect TODO: remove this after mbed works
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
         return;
     }
 
-    /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
-     * timeout.
-     */
-#if CONFIG_EXAMPLE_EXTENDED_ADV
-    addr = &((struct ble_gap_ext_disc_desc *)disc)->addr;
-#else
+    //Try to connect the the advertiser.
     addr = &((struct ble_gap_disc_desc *)disc)->addr;
-#endif
 
     rc = ble_gap_connect(own_addr_type, addr, 30000, NULL,
                          mule_ble_gap_event, NULL);
@@ -337,32 +344,22 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
     struct ble_hs_adv_fields fields;
     int rc;
 
-    //print event type 
-    printf("mule_ble_gap_event: %d\n", event->type);
-
     switch (event->type) {
     case BLE_GAP_EVENT_DISC:
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
                                      event->disc.length_data);
         if (rc != 0) {
             return 0;
-        }
+        };
 
-        printf("I'm in BLE_GAP_EVENT_DISC\n");
-
-        /* An advertisment report was received during GAP discovery. */
-        //TODO: add back? 
-        print_adv_fields(&fields);
-
-        /* Try to connect to the advertiser if it looks interesting. */
-        //TODO: change this function to our own
-        blecent_connect_if_interesting(&event->disc);
+        //Try to connect to the advertiser if it looks like a galaxy sensor
+        mule_connect_if_sensor(&event->disc);
         return 0;
 
     case BLE_GAP_EVENT_CONNECT:
-        /* A new connection was established or a connection attempt failed. */
+        //A new connection was established or a connection attempt failed
         if (event->connect.status == 0) {
-            /* Connection successfully established. */
+            //Connection successfully established
             MODLOG_DFLT(INFO, "Connection established ");
 
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
@@ -370,64 +367,41 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
             print_conn_desc(&desc);
             MODLOG_DFLT(INFO, "\n");
 
-            /* Remember peer. */
+            //Remember peer
             rc = peer_add(event->connect.conn_handle);
             if (rc != 0) {
                 MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
                 return 0;
             }
 
-#if MYNEWT_VAL(BLE_POWER_CONTROL)
-            blecent_power_control(event->connect.conn_handle);
-
-            ble_gap_event_listener_register(&power_control_event_listener,
-                                       blecent_gap_power_event, NULL);
-#endif
-
-#if CONFIG_EXAMPLE_ENCRYPTION
-            /** Initiate security - It will perform
-             * Pairing (Exchange keys)
-             * Bonding (Store keys)
-             * Encryption (Enable encryption)
-             * Will invoke event BLE_GAP_EVENT_ENC_CHANGE
-             **/
-            rc = ble_gap_security_initiate(event->connect.conn_handle);
-            if (rc != 0) {
-                MODLOG_DFLT(INFO, "Security could not be initiated, rc = %d\n", rc);
-                return ble_gap_terminate(event->connect.conn_handle,
-                                         BLE_ERR_REM_USER_CONN_TERM);
-            } else {
-                MODLOG_DFLT(INFO, "Connection secured\n");
-            }
-#else
-            /* Perform service discovery */
+            //Perform service discovery 
             rc = peer_disc_all(event->connect.conn_handle,
                         blecent_on_disc_complete, NULL);
             if(rc != 0) {
                 MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
                 return 0;
             }
-#endif
+
         } else {
-            /* Connection attempt failed; resume scanning. */
+            //Connection attempt failed; resume scanning
             MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
                         event->connect.status);
-            blecent_scan();
+            sensor_scan();
         }
 
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-        /* Connection terminated. */
+        //Connection terminated
         MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
         print_conn_desc(&event->disconnect.conn);
         MODLOG_DFLT(INFO, "\n");
 
-        /* Forget about peer. */
+        //Forget about peer
         peer_delete(event->disconnect.conn.conn_handle);
 
-        /* Resume scanning. */
-        blecent_scan();
+        //Resume scanning
+        sensor_scan();
         return 0;
 
     case BLE_GAP_EVENT_DISC_COMPLETE:
@@ -435,23 +409,14 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
                     event->disc_complete.reason);
         return 0;
 
-    case BLE_GAP_EVENT_ENC_CHANGE:
-        /* Encryption has been enabled or disabled for this connection. */
-        MODLOG_DFLT(INFO, "encryption change event; status=%d ",
-                    event->enc_change.status);
-        rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-        assert(rc == 0);
-        print_conn_desc(&desc);
-#if CONFIG_EXAMPLE_ENCRYPTION
-        /*** Go for service discovery after encryption has been successfully enabled ***/
-        rc = peer_disc_all(event->connect.conn_handle,
-                           blecent_on_disc_complete, NULL);
-        if (rc != 0) {
-            MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
-            return 0;
-        }
-#endif
-        return 0;
+    // case BLE_GAP_EVENT_ENC_CHANGE:
+    //     /* Encryption has been enabled or disabled for this connection. */
+    //     MODLOG_DFLT(INFO, "encryption change event; status=%d ",
+    //                 event->enc_change.status);
+    //     rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
+    //     assert(rc == 0);
+    //     print_conn_desc(&desc);
+    //     return 0;
 
     case BLE_GAP_EVENT_NOTIFY_RX:
         /* Peer sent us a notification or indication. */
@@ -475,30 +440,21 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
                     event->mtu.value);
         return 0;
 
-    case BLE_GAP_EVENT_REPEAT_PAIRING:
-        /* We already have a bond with the peer, but it is attempting to
-         * establish a new secure link.  This app sacrifices security for
-         * convenience: just throw away the old bond and accept the new link.
-         */
+    // case BLE_GAP_EVENT_REPEAT_PAIRING:
+    //     /* We already have a bond with the peer, but it is attempting to
+    //      * establish a new secure link.  This app sacrifices security for
+    //      * convenience: just throw away the old bond and accept the new link.
+    //      */
 
-        /* Delete the old bond. */
-        rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-        assert(rc == 0);
-        ble_store_util_delete_peer(&desc.peer_id_addr);
+    //     /* Delete the old bond. */
+    //     rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+    //     assert(rc == 0);
+    //     ble_store_util_delete_peer(&desc.peer_id_addr);
 
-        /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
-         * continue with the pairing operation.
-         */
-        return BLE_GAP_REPEAT_PAIRING_RETRY;
-
-#if CONFIG_EXAMPLE_EXTENDED_ADV
-    case BLE_GAP_EVENT_EXT_DISC:
-        /* An advertisment report was received during GAP discovery. */
-        ext_print_adv_report(&event->disc);
-
-        blecent_connect_if_interesting(&event->disc);
-        return 0;
-#endif
+    //     /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
+    //      * continue with the pairing operation.
+    //      */
+    //     return BLE_GAP_REPEAT_PAIRING_RETRY;
 
     default:
         return 0;
@@ -521,10 +477,9 @@ blecent_on_sync(void)
     rc = ble_hs_util_ensure_addr(0);
     assert(rc == 0);
 
-#if !CONFIG_EXAMPLE_INIT_DEINIT_LOOP
     /* Begin scanning for a peripheral to connect to. */
-    blecent_scan();
-#endif
+    sensor_scan();
+
 }
 
 void mbedtls_stuff() {
@@ -628,18 +583,17 @@ void mbedtls_stuff() {
 
 }
 
-void blecent_host_task(void *param)
+void mule_host_task(void *param)
 {
     ESP_LOGI(tag, "BLE Host Task Started");
     /* This function will return only when nimble_port_stop() is executed */
     nimble_port_run();
-
     nimble_port_freertos_deinit();
 }
 
 void app_main() {
 
-    printf("Hello world!\n");
+    printf("Hello!\n");
 
     /* Print chip information */
     esp_chip_info_t chip_info;
@@ -710,19 +664,19 @@ void app_main() {
 
     ble_store_config_init();
 
+    //TODO set up mbedtls certificate 
+
     //Start the muling task 
-    nimble_port_freertos_init(blecent_host_task);
+    nimble_port_freertos_init(mule_host_task);
     
-    printf("started connection");
+    printf("started connection\n");
 
 
     // TODO: host config and call backs 
     // TODO: app specific tasks 
-    // run thread (nimble_port_freertos_init)
 
-    mbedtls_stuff();
+    //mbedtls_stuff();
 
-    //scan for sensor devices and connect to them
     
     for (int i = 20; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
