@@ -34,6 +34,10 @@
 #include "mbedtls/esp_debug.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/timing.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/ssl_cookie.h"
+#include "certs.h"
 
 struct ble_hs_adv_fields;
 struct ble_gap_conn_desc;
@@ -295,15 +299,7 @@ mule_connect_if_sensor(void *disc)
         return;
     }
 
-    //Start mbedtls handshake to determine if safe to connect
-    mbedtls_init();
-    printf("mbedtls initialized\n");
-
-    //TODO: Verify that sensor/client request is valid
-
-    //Send mule/server hello to client 
-
-    //Figure out address to use for connect TODO: remove this after mbed works
+    //Figure out address to use for connect TODO: maybe remove this after mbedtls works??
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
@@ -483,7 +479,7 @@ blecent_on_sync(void)
 }
 
 void mbedtls_stuff() {
-    printf("-- Trying out MBED TLS server (w/out BLE connection) --\n");
+    printf("Trying out MBED TLS server\n");
     int error_code;
 
     // initialize entropy and seed random generator
@@ -502,26 +498,43 @@ void mbedtls_stuff() {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_pk_context pkey;
+    mbedtls_timing_delay_context timer; 
+    mbedtls_net_context listen_fd, client_fd;
+    mbedtls_ssl_cookie_ctx cookie_ctx;
 
+    mbedtls_net_init(&listen_fd);
+    mbedtls_net_init(&client_fd);
     mbedtls_x509_crt_init(&srvcert);
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_pk_init(&pkey);
+    mbedtls_ssl_cookie_init(&cookie_ctx);
+
+
 
     // TODO something about setting up network connections
     
     // Initialize server with mule certificate
     // XXX: currently uses embedded test certs
-    /*
+    
+    const unsigned char *cert_data = mule_srv_crt;
     error_code = mbedtls_x509_crt_parse(
         &srvcert,
-        (const unsigned char *) mbedtls_test_srv_crt,
-        mbedtls_test_srv_crt_len
+        cert_data,
+        mule_srv_crt_len
     );
     if (error_code) {
         printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
+        char buf[100];
+        mbedtls_strerror(error_code, buf, sizeof(buf));
+        printf("Error parsing X.509 certificate: %s\n", buf);
+        for (size_t i = 0; i < mule_srv_crt_len; i++) {
+            printf("%02x", mule_srv_crt[i]);
+        }
+        printf("\n");
         abort();
     }
+    /*
 
     error_code = mbedtls_x509_crt_parse(
         &srvcert,
@@ -544,6 +557,7 @@ void mbedtls_stuff() {
         abort();
     }
     */
+    
 
     // TODO start listening on "socket"
     
@@ -664,18 +678,21 @@ void app_main() {
 
     ble_store_config_init();
 
+    //Initialize mbedtls
+    //mbedtls_init();
+    //printf("mbedtls initialized\n");
+
     //TODO set up mbedtls certificate 
+    
 
     //Start the muling task 
     nimble_port_freertos_init(mule_host_task);
     
     printf("started connection\n");
 
+    mbedtls_stuff();
 
-    // TODO: host config and call backs 
-    // TODO: app specific tasks 
-
-    //mbedtls_stuff();
+    printf("mbedtls stuff done\n");
 
     
     for (int i = 20; i >= 0; i--) {
