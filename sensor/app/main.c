@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "nrf.h"
 #include "nrf_delay.h"
+#include "nrf_uart.h"
 #include "nrf_gpio.h"
 #include "nrf_log.h"
 #include "nrf_crypto.h"
@@ -19,7 +20,13 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecdh.h"
 #include "mbedtls/error.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/timing.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/ssl_cookie.h"
 #include "ble_advertising.h"
+#include "ble_conn_state.h"
+#include "ble.h"
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
@@ -77,35 +84,41 @@ int main(void) {
 
     // Crypto initialization
     error_code = nrf_crypto_init();
-    //APP_ERROR_CHECK(error_code);
+    APP_ERROR_CHECK(error_code);
 
     // Initilize mbedtls 
-    mbedtls_ecdh_context ctx_sensor, ctx_mule;
+    mbedtls_net_context server_fd;
+    mbedtls_ecdh_context ctx_sensor;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_x509_crt cacert;
+    mbedtls_timing_delay_context timer;
 
     int exit = MBEDTLS_EXIT_FAILURE;
-    size_t srv_olen;
+    //size_t srv_olen;
     size_t cli_olen;
     unsigned char secret_cli[32] = { 0 };
-    unsigned char secret_srv[32] = { 0 };
+    //unsigned char secret_srv[32] = { 0 };
     unsigned char cli_to_srv[36], srv_to_cli[33];
     const char pers[] = "ecdh";
 
-    //NRF_CRYPTOCELL->ENABLE=1; // idk about this? 
-
-    // Initialize a client AND server context. Eventually, one of
-    // these contexts will move off onto the ESP
-    mbedtls_ecdh_init(&ctx_sensor);
-    mbedtls_ecp_group_load(&ctx_sensor.grp, MBEDTLS_ECP_DP_CURVE25519);
-
-    mbedtls_ecdh_init(&ctx_mule);
-    mbedtls_ecp_group_load(&ctx_mule.grp, MBEDTLS_ECP_DP_CURVE25519);
-
-    // TODO cryptocell entropy?
+    // Initialize a mbedtls client
+    //mbedtls_net_init(&server_fd); TODO this seems to only work on Windows/MAC/Linux?
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_x509_crt_init(&cacert);
     mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    // Initialize a mbedtls client
+    //mbedtls_ecdh_init(&ctx_sensor); TODO???????
+    //mbedtls_ecp_group_load(&ctx_sensor.grp, MBEDTLS_ECP_DP_CURVE25519);
+
+    // Seed the random number generator
     mbedtls_entropy_init(&entropy);
-    error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
+    error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                        (const unsigned char *)pers, strlen(pers));
 
     //error_code = mbedtls_ecdh_setup(&ctx_sensor, MBEDTLS_ECP_DP_CURVE25519);
     // look into porting to nrf sdk 16 if we need this function
@@ -125,32 +138,32 @@ int main(void) {
         mbedtls_ctr_drbg_random,    
         &ctr_drbg
     );
-    APP_ERROR_CHECK(error_code);
+    //APP_ERROR_CHECK(error_code);
 
-    printf("gen 2\n");
-    // Generate a key for the mule (XXX shouldn't stay here long-term)
-    error_code = mbedtls_ecdh_gen_public(
-        &ctx_mule.grp,            // Elliptic curve group
-        &ctx_mule.d,              // Sensor secret key
-        &ctx_mule.Q,              // Sensor public key
-        mbedtls_ctr_drbg_random,    
-        &ctr_drbg
-    );
-    APP_ERROR_CHECK(error_code);
+    // printf("gen 2\n");
+    // // Generate a key for the mule (XXX shouldn't stay here long-term)
+    // error_code = mbedtls_ecdh_gen_public(
+    //     &ctx_mule.grp,            // Elliptic curve group
+    //     &ctx_mule.d,              // Sensor secret key
+    //     &ctx_mule.Q,              // Sensor public key
+    //     mbedtls_ctr_drbg_random,    
+    //     &ctr_drbg
+    // );
+    // APP_ERROR_CHECK(error_code);
 
     //read in public key from the mule
-    error_code = mbedtls_ecdh_read_public(&ctx_sensor, srv_to_cli, 
-                                    sizeof(srv_to_cli));
+    // error_code = mbedtls_ecdh_read_public(&ctx_sensor, srv_to_cli, 
+    //                                 sizeof(srv_to_cli));
 
 
-    // Compute shared secrets 
-    error_code = mbedtls_ecdh_calc_secret(&ctx_sensor, &cli_olen, secret_cli,
-                                   sizeof(secret_cli),
-                                   mbedtls_ctr_drbg_random, &ctr_drbg);
+    // // Compute shared secrets 
+    // error_code = mbedtls_ecdh_calc_secret(&ctx_sensor, &cli_olen, secret_cli,
+    //                                sizeof(secret_cli),
+    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
 
-    error_code = mbedtls_ecdh_calc_secret(&ctx_mule, &srv_olen, secret_srv,
-                                   sizeof(secret_srv),
-                                   mbedtls_ctr_drbg_random, &ctr_drbg);
+    // error_code = mbedtls_ecdh_calc_secret(&ctx_mule, &srv_olen, secret_srv,
+    //                                sizeof(secret_srv),
+    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
     
     // GPIO initialization
     nrf_gpio_cfg_output(LED);
@@ -172,6 +185,16 @@ int main(void) {
     // Start Advertising
     //advertising_init();
     advertising_start();
+
+    //Wait for connection
+    uint16_t ble_conn_handle = simple_ble_app->conn_handle;
+
+    while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
+        printf("waiting to connect..\n");
+        ble_conn_handle = simple_ble_app->conn_handle;
+    }
+
+    printf("connected, start mbedtls handshake\n");
     
 
     printf("main loop starting\n");
@@ -182,13 +205,12 @@ int main(void) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
-        //loop_counter++;
     }
 
     // Cleanup 
     printf("clean up!\n");
     mbedtls_ecdh_free(&ctx_sensor);
-    mbedtls_ecdh_free(&ctx_mule);
+    //mbedtls_ecdh_free(&ctx_mule);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
 }

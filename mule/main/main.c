@@ -698,6 +698,7 @@ void app_main() {
 
     mbedtls_stuff();
 
+    //TODO: clean up mbedtls stuff?
     
     for (int i = 20; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);

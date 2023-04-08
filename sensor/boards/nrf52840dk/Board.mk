@@ -86,11 +86,14 @@ BOARD_SOURCES += \
 	ble_advertising.c\
 	ble_advdata.c\
 	ble_conn_params.c\
+	ble_conn_state.c\
 	ble_srv_common.c\
 	simple_ble.c\
 	nrf_crypto_init.c\
 	nrf_crypto_ecdh.c\
 	nrf_crypto_error.c\
+	nrf_atflags.c\
+	net_sockets.c\
 
 endif
 
