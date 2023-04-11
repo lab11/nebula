@@ -20,3 +20,7 @@ include $(NRF_BASE_DIR)/make/AppMakefile.mk
 
 #Include includes here as well to capture app specific changes
 include ../boards/nrf52840dk/Includes.mk
+
+# Remove unused SDK components TODO: fix this and add back in sdk include file
+#SDK_SOURCE_PATHS -= $(SDK_ROOT)components/libraries/sha256/
+#SDK_HEADER_PATHS -= $(SDK_ROOT)components/libraries/sha256/

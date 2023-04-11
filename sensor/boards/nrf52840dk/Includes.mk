@@ -101,6 +101,7 @@ ifneq (,$(filter $(NRF_IC),nrf52832 nrf52833 nrf52840))
     SDK_HEADER_PATHS += $(SDK_ROOT)components/iot/background_dfu/transport/coap/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/iot/coap/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/iot/common/
+    SDK_HEADER_PATHS += $(SDK_ROOT)components/ble/common/
     SDK_HEADER_PATHS += $(wildcard $(SDK_ROOT)components/libraries/log/src/)
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/bsp/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/button/
@@ -139,7 +140,7 @@ ifneq (,$(filter $(NRF_IC),nrf52832 nrf52833 nrf52840))
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/sdcard/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/sensorsim/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/serial/
-    SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/sha256/
+    #SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/sha256/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/simple_timer/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/slip/
     SDK_HEADER_PATHS += $(SDK_ROOT)components/libraries/sortlist/
@@ -224,6 +225,7 @@ ifneq (,$(filter $(NRF_IC),nrf52832 nrf52833 nrf52840))
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/iot/background_dfu/transport/coap/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/iot/coap/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/iot/common/
+    SDK_SOURCE_PATHS += $(SDK_ROOT)components/ble/common/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/bsp/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/button/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/cli/
@@ -261,7 +263,7 @@ ifneq (,$(filter $(NRF_IC),nrf52832 nrf52833 nrf52840))
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/sdcard/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/sensorsim/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/serial/
-    SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/sha256/
+    #SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/sha256/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/simple_timer/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/slip/
     SDK_SOURCE_PATHS += $(SDK_ROOT)components/libraries/sortlist/

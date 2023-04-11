@@ -34,6 +34,11 @@
 #include "mbedtls/esp_debug.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/timing.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/ssl_cookie.h"
+#include "certs.h"
+#include "time.h"
 
 struct ble_hs_adv_fields;
 struct ble_gap_conn_desc;
@@ -60,6 +65,8 @@ static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
+
+uint16_t ble_conn_handle;
 
 void ble_store_config_init();
 
@@ -295,15 +302,7 @@ mule_connect_if_sensor(void *disc)
         return;
     }
 
-    //Start mbedtls handshake to determine if safe to connect
-    mbedtls_init();
-    printf("mbedtls initialized\n");
-
-    //TODO: Verify that sensor/client request is valid
-
-    //Send mule/server hello to client 
-
-    //Figure out address to use for connect TODO: remove this after mbed works
+    //Figure out address to use for connect TODO: maybe remove this after mbedtls works??
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
@@ -381,6 +380,9 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
                 MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
                 return 0;
             }
+
+            //Save the connection handle for future reference
+            ble_conn_handle = event->connect.conn_handle;
 
         } else {
             //Connection attempt failed; resume scanning
@@ -483,8 +485,12 @@ blecent_on_sync(void)
 }
 
 void mbedtls_stuff() {
-    printf("-- Trying out MBED TLS server (w/out BLE connection) --\n");
+    printf("Starting the mbedtls server\n");
     int error_code;
+
+    /*
+    * Initialize the RNG and the session data
+    */
 
     // initialize entropy and seed random generator
     mbedtls_entropy_context entropy;
@@ -502,56 +508,56 @@ void mbedtls_stuff() {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_pk_context pkey;
+    mbedtls_timing_delay_context timer; 
+    mbedtls_net_context listen_fd, client_fd;
+    mbedtls_ssl_cookie_ctx cookie_ctx;
 
+    mbedtls_net_init(&listen_fd);
+    mbedtls_net_init(&client_fd);
     mbedtls_x509_crt_init(&srvcert);
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_pk_init(&pkey);
+    mbedtls_ssl_cookie_init(&cookie_ctx);
 
-    // TODO something about setting up network connections
+
+    /*
+    * Load the certificates and private RSA key
+    */
     
     // Initialize server with mule certificate
-    // XXX: currently uses embedded test certs
-    /*
+    const unsigned char *cert_data = mule_srv_crt;
     error_code = mbedtls_x509_crt_parse(
         &srvcert,
-        (const unsigned char *) mbedtls_test_srv_crt,
-        mbedtls_test_srv_crt_len
+        cert_data,
+        mule_srv_crt_len
     );
     if (error_code) {
         printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
         abort();
     }
 
-    error_code = mbedtls_x509_crt_parse(
-        &srvcert,
-        (const unsigned char *) mbedtls_test_cas_pem,
-        mbedtls_test_cas_pem_len
-    );
-    if (error_code) {
-        printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
-        abort();
-    }
-
+    const unsigned char *key_data = mule_srv_key;
     error_code = mbedtls_pk_parse_key(
         &pkey,
-        (const unsigned char *) mbedtls_test_srv_key,
-        mbedtls_test_srv_key_len, NULL, 0,
+        key_data,
+        mule_srv_key_len, NULL, 0,
         mbedtls_ctr_drbg_random, &ctr_drbg
     );
     if (error_code) {
         printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
         abort();
     }
+    
+    /*
+    * Setup SSL stuff
     */
-
-    // TODO start listening on "socket"
     
     // Setup server
     error_code = mbedtls_ssl_config_defaults(
         &conf,
         MBEDTLS_SSL_IS_SERVER,
-        MBEDTLS_SSL_TRANSPORT_STREAM, // _DATAGRAM for DTLS, perhaps?
+        MBEDTLS_SSL_TRANSPORT_DATAGRAM, 
         MBEDTLS_SSL_PRESET_DEFAULT
     );
     if (error_code) {
@@ -560,7 +566,8 @@ void mbedtls_stuff() {
     }
 
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    // mbedtls_ssl_conf_dbg ??
+    //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+    //mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
 
     mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
     error_code = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
@@ -575,10 +582,28 @@ void mbedtls_stuff() {
         abort();
     }
 
-    mbedtls_ssl_session_reset(&ssl);
-    // TODO call mbedtls_ssl_session_rest(&ssl) when new connection
+    //waits for BLE connection to continue 
+    while (ble_gap_conn_active() == 0) {
+        //wait  
+        printf("waiting for BLE connection\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
 
-    printf("--             done               --\n");
+    // Set bio to call ble connection
+    //mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
+    //TODO: ble_write, ble_read move above connection?
+
+    //Handshake 
+    error_code = mbedtls_ssl_handshake(&ssl);
+    if (error_code) {
+        printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    mbedtls_ssl_session_reset(&ssl);
+    // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
+
+    printf("mbedtls done\n");
 
 
 }
@@ -664,19 +689,16 @@ void app_main() {
 
     ble_store_config_init();
 
-    //TODO set up mbedtls certificate 
-
     //Start the muling task 
     nimble_port_freertos_init(mule_host_task);
     
     printf("started connection\n");
+    
+    //get connection handle 
 
+    mbedtls_stuff();
 
-    // TODO: host config and call backs 
-    // TODO: app specific tasks 
-
-    //mbedtls_stuff();
-
+    //TODO: clean up mbedtls stuff?
     
     for (int i = 20; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
