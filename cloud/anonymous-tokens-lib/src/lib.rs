@@ -7,6 +7,7 @@ use pyo3::types::PyBytes;
 fn generate_keypair(py: Python) -> PyResult<PyObject> {
     let mut csrng = rand::rngs::OsRng;
     let keypair = KeyPair::generate(&mut csrng);
+
     let serialized = bincode::serialize(&keypair);
     match serialized {
         Err(e) => Err(PyErr::new::<PyValueError, _>(format!("{}", e))),
