@@ -4,19 +4,19 @@
 
 Use the included `Makefile` to run the provider and application servers in various configurations.
 
-    * `make build`: compiles a Docker image that runs the provider or application server
-    * `make clean`: cleans build files
+ * `make build`: compiles a Docker image that runs the provider or application server
+ * `make clean`: cleans build files
 
 ### Generate provider keypair
 
-    * `make keypair`: generates a `keypair.bin` file that the provider Docker image will package as credentials to sign and verify tokens. Don't commit this file to Github :)
+ * `make keypair`: generates a `keypair.bin` file that the provider Docker image will package as credentials to sign and verify tokens. Don't commit this file to Github :)
 
 ### Local
 
 Running locally uses Terraform to spin up some Docker containers. See `tf/local/main.tf` for the up-to-date configuration. Should expose the provider at `localhost:8000` and the application server at `localhost:8080`
 
-    * `make local`: compiles and runs both provider application server images using Terraform.
-    * `make destroy-local`: removes Terraform resources and shuts down images.
+ * `make local`: compiles and runs both provider application server images using Terraform.
+ * `make destroy-local`: removes Terraform resources and shuts down images.
 
 ### GCP
 
@@ -33,8 +33,8 @@ To deploy, you'll first need to install and configure the GCP SDK (e.g. `brew in
 
 Then you'll be able to deploy the services (note: the API will be publicly accessible):
 
-    * `make remote`: Tags the galaxy docker image and pushes it to the Google Container Registry, then starts the services using Terraform.
-    * `make destroy-local`: shuts down Terraform-instantiated services.
+ * `make remote`: Tags the galaxy docker image and pushes it to the Google Container Registry, then starts the services using Terraform.
+ * `make destroy-local`: shuts down Terraform-instantiated services.
 
 ## API
 
