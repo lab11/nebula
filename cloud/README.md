@@ -5,7 +5,7 @@
 Use the included `Makefile` to run the provider and application servers in various configurations.
 
     * `make build`: compiles a Docker image that runs the provider or application server
-    * `make clean`: cleans build files and local Docker containers/networks
+    * `make clean`: cleans build files
 
 ### Generate provider keypair
 
@@ -13,9 +13,28 @@ Use the included `Makefile` to run the provider and application servers in vario
 
 ### Local
 
-    * `make provider`: compiles and runs the provider server Docker image at port 8000
-    * `make app`: compiles and runs the app server Docker image at port 8080
-    * `make local`: compiles and runs both a provider image and an application server image at ports 8000 and 8080, respectively. THe images are connected together on a `galaxy_cloud` bridge network.
+Running locally uses Terraform to spin up some Docker containers. See `tf/local/main.tf` for the up-to-date configuration. Should expose the provider at `localhost:8000` and the application server at `localhost:8080`
+
+    * `make local`: compiles and runs both provider application server images using Terraform.
+    * `make destroy-local`: removes Terraform resources and shuts down images.
+
+### GCP
+
+The provider and application servers run as GCP Cloud Run services at the following URLs:
+
+* Provider: `https://provider-vavytk2tca-uc.a.run.app`
+* Application Server: `https://appserver-1-vavytk2tca-uc.a.run.app`
+
+To deploy, you'll first need to install and configure the GCP SDK (e.g. `brew install google-cloud-sdk`) and authenticate:
+
+1. `gcloud init`
+2. `gcloud auth application-default login`
+3. `gcloud auth configure-docker`
+
+Then you'll be able to deploy the services (note: the API will be publicly accessible):
+
+    * `make remote`: Tags the galaxy docker image and pushes it to the Google Container Registry, then starts the services using Terraform.
+    * `make destroy-local`: shuts down Terraform-instantiated services.
 
 ## API
 
@@ -30,7 +49,7 @@ Use the included `Makefile` to run the provider and application servers in vario
                 "result": <encoded public parameter str>
             }
 
-    * `GET /sign_tokens`
+    * `POST /sign_tokens`
         Params: (none)
         Body: 
             Content-type: application/json
@@ -43,7 +62,7 @@ Use the included `Makefile` to run the provider and application servers in vario
                 "result": [<encoded signed token strs>]
             }
 
-    * `GET /redeem_tokens`
+    * `POST /redeem_tokens`
         Params: (none)
         Body:
             Content-type: application/json
@@ -58,7 +77,7 @@ Use the included `Makefile` to run the provider and application servers in vario
 
 ### Application Server
 
-    * `GET /deliver`
+    * `POST /deliver`
         Params: (none)
         Body:
             Content-type: application/json

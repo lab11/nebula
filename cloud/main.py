@@ -55,15 +55,15 @@ async def make_threaded_call(request: Request, fn, should_be_provider: bool):
 async def public_params(request: Request):
     return await make_threaded_call(request, provider.get_public_params, should_be_provider=True)
 
-@app.get("/sign_tokens")
+@app.post("/sign_tokens")
 async def sign_tokens(request: Request):
     return await make_threaded_call(request, provider.sign_tokens, should_be_provider=True)
 
-@app.get("/redeem_tokens")
+@app.post("/redeem_tokens")
 async def redeem_tokens(request: Request):
     return await make_threaded_call(request, provider.redeem_tokens, should_be_provider=True)
 
-@app.get("/deliver")
+@app.post("/deliver")
 async def deliver(request: Request):
     return await make_threaded_call(request, appserver.deliver, should_be_provider=False)
 

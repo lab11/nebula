@@ -1,39 +1,27 @@
-.PHONY: provider app build docker_setup docker_kill_servers local clean keypair
+.PHONY: build local remote clean destroy-local destroy-remote keypair
 
-PORT=8000
-DEFAULT_PROVIDER_URL=http://provider
+local: build
+	cd tf/local && terraform init && terraform apply -auto-approve
 
-provider: build docker_setup 
-	docker run -it --rm -p 8000:$(PORT)\
-	 -e SERVER_PORT=$(PORT) -e SERVER_MODE=provider galaxy_cloud
+remote: build
+	docker tag galaxy_cloud gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
+	docker push gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
 
-app: build docker_setup
-	docker run -it --rm -p 8080:$(PORT)\
-	 -e SERVER_PORT=$(PORT) -e SERVER_MODE=app -e PROVIDER_URL=$(DEFAULT_PROVIDER_URL) galaxy_cloud
-
-local: build docker_setup
-	docker run -t --rm -p 8000:$(PORT) --network galaxy_net --name provider --hostname provider\
-	 -e SERVER_PORT=$(PORT) -e SERVER_MODE=provider galaxy_cloud &
-	docker run -it --rm -p 8080:$(PORT) --network galaxy_net --name appserver --hostname appserver\
-	 -e SERVER_PORT=$(PORT) -e SERVER_MODE=app -e PROVIDER_URL=$(DEFAULT_PROVIDER_URL):$(PORT) galaxy_cloud
+	cd tf/gcp && terraform init && terraform apply -auto-approve
 
 build:
 	mkdir -p _build
 	cp -r ../ext/anonymous-tokens _build/
 	docker build -t galaxy_cloud .
 
-docker_kill_servers:
-	docker stop provider || true
-	docker stop appserver || true
-	docker rm provider || true
-	docker rm appserver || true
-
-docker_setup: docker_kill_servers
-	docker network create galaxy_net || true
-
-clean: docker_kill_servers
+clean: 
 	rm -rf _build
-	docker network rm galaxy_net
+
+destroy-local:
+	cd tf/local && terraform destroy -auto-approve
+
+destroy-remote:
+	cd tf/gcp && terraform destroy -auto-approve
 
 keypair:
 	maturin develop --manifest-path anonymous-tokens-lib/Cargo.toml --release

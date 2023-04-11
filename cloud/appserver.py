@@ -31,7 +31,7 @@ def get_more_tokens(num_tokens: int) -> list[str]:
         util.encode_bytes(tokenlib.generate_token(util.decode_bytes(public_params))) for _ in range(num_tokens)
     ]
 
-    signed_tokens = [util.decode_bytes(t) for t in requests.get(
+    signed_tokens = [util.decode_bytes(t) for t in requests.post(
         provider_url + "/sign_tokens",
         headers = {'Content-type': 'application/json'},
         data=json.dumps({"blinded_tokens": blinded_tokens})
