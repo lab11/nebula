@@ -1,33 +1,72 @@
 # Galaxy Cloud - Provider and Application Servers
 
-## Build and launch using the Makefile
+## Build instructions
 
-    * `make build    # build the docker image`
-    * `make provider # start provider server`
-    * `make app      # start application server`
+Use the included `Makefile` to run the provider and application servers in various configurations.
 
-## Build and launch the Docker
-```bash
-docker build -t my_app .
-docker run -it --rm -p 8000:8000 -e SERVER_MODE=provider my_app
-```
+    * `make build`: compiles a Docker image that runs the provider or application server
+    * `make clean`: cleans build files and local Docker containers/networks
 
-## HTTPS Get request
-```bash
-http://0.0.0.0:8000/run_provider?a=1
-```
+### Generate provider keypair
 
-## Provider API
+    * `make keypair`: generates a `keypair.bin` file that the provider Docker image will package as credentials to sign and verify tokens. Don't commit this file to Github :)
 
-* `GET public_params` --> input: nothing, returns: public parameter payload
-* `GET sign_tokens` --> input: list of blinded tokens, returns: list of signed blinded tokens
-* `GET redeem_tokens` --> input: list of unblinded tokens, returns: count of valid tokens
+### Local
 
-## App Server API
+    * `make provider`: compiles and runs the provider server Docker image at port 8000
+    * `make app`: compiles and runs the app server Docker image at port 8080
+    * `make local`: compiles and runs both a provider image and an application server image at ports 8000 and 8080, respectively. THe images are connected together on a `galaxy_cloud` bridge network.
 
-* `GET deliver` --> input: data payload, returns: unblinded token
+## API
 
-## Steps for Rust->Python bindings [JL notes]
+### Provider
 
-1. run maturin develop
-2. run python script
+    * `GET /public_params`
+        Params: (none)
+        Body:   (none)
+
+        Returns:
+            {
+                "result": <encoded public parameter str>
+            }
+
+    * `GET /sign_tokens`
+        Params: (none)
+        Body: 
+            Content-type: application/json
+            {
+                "blinded_tokens": [<encoded blinded token strs>]
+            }
+
+        Returns:
+            {
+                "result": [<encoded signed token strs>]
+            }
+
+    * `GET /redeem_tokens`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "tokens": [<encoded token strs>]
+            }
+
+        Returns:
+            {
+                "result": <number valid tokens>
+            }
+
+### Application Server
+
+    * `GET /deliver`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "data": <payload data>
+            }
+
+        Returns:
+            {
+                "result": <encoded token str>
+            }
