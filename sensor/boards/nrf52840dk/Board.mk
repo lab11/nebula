@@ -51,6 +51,7 @@ BOARD_SOURCES += \
 	nrf_ble_qwr.c\
 	nrf_drv_twi.c\
 	nrf_drv_uart.c\
+	nrf_drv_rng.c\
 	nrf_fprintf.c\
 	nrf_fprintf_format.c\
 	nrf_log_backend_rtt.c\
@@ -80,6 +81,7 @@ BOARD_SOURCES += \
 	nrfx_uart.c\
 	nrfx_uarte.c\
 	nrfx_clock.c\
+	nrfx_rng.c\
 	SEGGER_RTT.c\
 	SEGGER_RTT_Syscalls_GCC.c\
 	SEGGER_RTT_printf.c\
@@ -94,6 +96,7 @@ BOARD_SOURCES += \
 	nrf_crypto_error.c\
 	nrf_atflags.c\
 	net_sockets.c\
+	sha256.c\
 
 endif
 

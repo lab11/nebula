@@ -13,6 +13,7 @@
 #include "nrf_crypto_error.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
+#include "nrf_drv_rng.h"
 #include "simple_ble.h"
 #include "mbedtls/config.h"
 #include "mbedtls/platform.h"
@@ -24,9 +25,12 @@
 #include "mbedtls/timing.h"
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl_cookie.h"
+#include "mbedtls/sha256.h"
+#include "mbedtls/x509_crt.h"
 #include "ble_advertising.h"
 #include "ble_conn_state.h"
 #include "ble.h"
+#include "certs.h"
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
@@ -74,6 +78,16 @@ void ble_evt_write(ble_evt_t const* p_ble_evt) {
     }
 }
 
+int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
+{
+    //Call TRNG peripheral:
+    nrf_drv_rng_block_rand(output, len);
+    *olen = len;
+
+    // Return 0 on success
+    return 0;
+}
+
 int main(void) {
 
     //setup error code
@@ -84,20 +98,18 @@ int main(void) {
 
     // Crypto initialization
     error_code = nrf_crypto_init();
-    APP_ERROR_CHECK(error_code);
 
-    // Initilize mbedtls 
+    // Initilize mbedtls components
     mbedtls_net_context server_fd;
     mbedtls_ecdh_context ctx_sensor;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_x509_crt cacert;
+    mbedtls_x509_crt clicert;
+    mbedtls_pk_context pkey;
     mbedtls_timing_delay_context timer;
 
-    int exit = MBEDTLS_EXIT_FAILURE;
-    //size_t srv_olen;
     size_t cli_olen;
     unsigned char secret_cli[32] = { 0 };
     //unsigned char secret_srv[32] = { 0 };
@@ -108,82 +120,123 @@ int main(void) {
     //mbedtls_net_init(&server_fd); TODO this seems to only work on Windows/MAC/Linux?
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
-    mbedtls_x509_crt_init(&cacert);
+    mbedtls_x509_crt_init(&clicert);
     mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_pk_init(&pkey);
 
-    // Initialize a mbedtls client
-    //mbedtls_ecdh_init(&ctx_sensor); TODO???????
-    //mbedtls_ecp_group_load(&ctx_sensor.grp, MBEDTLS_ECP_DP_CURVE25519);
+    // Initialize the RNG and entropy source for mbedtls
+    mbedtls_entropy_init(&entropy);
+
+    nrf_drv_rng_config_t rng_config = NRF_DRV_RNG_DEFAULT_CONFIG;
+    error_code = nrf_drv_rng_init(&rng_config);
+
+    error_code = mbedtls_entropy_add_source(&entropy, entropy_source, NULL,
+                             MBEDTLS_ENTROPY_MAX_GATHER, MBEDTLS_ENTROPY_SOURCE_STRONG);
+    if (error_code) {
+        printf("error at line %d: mbedtls_entropy_add_source %d\n", __LINE__, error_code);
+        abort();
+    }
 
     // Seed the random number generator
-    mbedtls_entropy_init(&entropy);
     error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                        (const unsigned char *)pers, strlen(pers));
+                                        NULL, 0);
+    if (error_code) {
+        printf("error at line %d: mbedtls_ctr_drbg_seed %d\n", __LINE__, error_code);
+        abort();
+    }
 
-    //error_code = mbedtls_ecdh_setup(&ctx_sensor, MBEDTLS_ECP_DP_CURVE25519);
-    // look into porting to nrf sdk 16 if we need this function
+    // //Generate a public key and a TLS ServerKeyExchange payload.
+    // error_code = mbedtls_ecdh_make_params(&ctx_sensor, &cli_olen, cli_to_srv,
+    //                                sizeof(cli_to_srv),
+    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ecdh_make_params %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    //Generate a public key and a TLS ServerKeyExchange payload.
-    error_code = mbedtls_ecdh_make_params(&ctx_sensor, &cli_olen, cli_to_srv,
-                                   sizeof(cli_to_srv),
-                                   mbedtls_ctr_drbg_random, &ctr_drbg);
 
-
-    printf("gen 1\n");
-    // Generate a public key for the sensor
-    error_code = mbedtls_ecdh_gen_public(
-        &ctx_sensor.grp,            // Elliptic curve group
-        &ctx_sensor.d,              // Sensor secret key
-        &ctx_sensor.Q,              // Sensor public key
-        mbedtls_ctr_drbg_random,    
-        &ctr_drbg
-    );
-    //APP_ERROR_CHECK(error_code);
-
-    // printf("gen 2\n");
-    // // Generate a key for the mule (XXX shouldn't stay here long-term)
+    // printf("gen 1\n");
+    // // Generate a public key for the sensor
     // error_code = mbedtls_ecdh_gen_public(
-    //     &ctx_mule.grp,            // Elliptic curve group
-    //     &ctx_mule.d,              // Sensor secret key
-    //     &ctx_mule.Q,              // Sensor public key
+    //     &ctx_sensor.grp,            // Elliptic curve group
+    //     &ctx_sensor.d,              // Sensor secret key
+    //     &ctx_sensor.Q,              // Sensor public key
     //     mbedtls_ctr_drbg_random,    
     //     &ctr_drbg
     // );
-    // APP_ERROR_CHECK(error_code);
 
-    //read in public key from the mule
-    // error_code = mbedtls_ecdh_read_public(&ctx_sensor, srv_to_cli, 
-    //                                 sizeof(srv_to_cli));
-
-
-    // // Compute shared secrets 
-    // error_code = mbedtls_ecdh_calc_secret(&ctx_sensor, &cli_olen, secret_cli,
-    //                                sizeof(secret_cli),
-    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
-
-    // error_code = mbedtls_ecdh_calc_secret(&ctx_mule, &srv_olen, secret_srv,
-    //                                sizeof(secret_srv),
-    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
     
-    // GPIO initialization
+    /*
+    * Load the certificates and private RSA key
+    */
+    const unsigned char *cert_data = sensor_cli_crt;
+    error_code = mbedtls_x509_crt_parse(
+        &clicert,
+        cert_data,
+        sensor_cli_crt_len);
+    if (error_code) {
+        printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    const unsigned char *key_data = sensor_cli_key;
+    error_code = mbedtls_pk_parse_key(
+        &pkey,
+        key_data,
+        mule_srv_key_len, NULL, 0);
+    if (error_code) {
+        printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    /*
+    * Setup SSL stuff
+    */
+    error_code = mbedtls_ssl_config_defaults(
+        &conf,
+        MBEDTLS_SSL_IS_CLIENT,
+        MBEDTLS_SSL_TRANSPORT_DATAGRAM,
+        MBEDTLS_SSL_PRESET_DEFAULT
+    );
+    if (error_code) {
+        printf("error at line %d: mbedtls_ssl_config_defaults returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    mbedtls_ssl_conf_authmode( &conf, MBEDTLS_SSL_VERIFY_OPTIONAL ); //TODO change from verify optional
+    mbedtls_ssl_conf_ca_chain( &conf, &clicert, NULL );
+    mbedtls_ssl_conf_rng( &conf, mbedtls_ctr_drbg_random, &ctr_drbg );
+    mbedtls_ssl_conf_read_timeout( &conf, 10000); //TODO change this to something reasonable/no magic numbers
+
+    error_code = mbedtls_ssl_setup( &ssl, &conf);
+    if (error_code) {
+        printf("error at line %d: mbedtls_ssl_setup returned %d\n", __LINE__, error_code);
+        abort();
+    }
+
+    error_code = mbedtls_ssl_set_hostname( &ssl, "localhost");
+    if (error_code) {
+        printf("error at line %d: mbedtls_ssl_set_hostname returned %d\n", __LINE__, error_code);
+        abort();
+    }
+    
+    /*
+    * GPIO initialization
+    */
     nrf_gpio_cfg_output(LED);
 
-    //printf("mbedtls init done\n");
-
-    // BLE initialization
+    /*
+    * BLE initialization
+    */
     simple_ble_app = simple_ble_init(&ble_config);
 
     simple_ble_add_service(&sensor_service);
-
-    //setup data packet 
-    
-
+ 
     simple_ble_add_characteristic(1, 1, 0, 0,
         sizeof(sensor_state), (uint8_t*)&sensor_state,
         &sensor_service, &sensor_state_char);
 
     // Start Advertising
-    //advertising_init();
     advertising_start();
 
     //Wait for connection
@@ -191,10 +244,31 @@ int main(void) {
 
     while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
         printf("waiting to connect..\n");
+        nrf_delay_ms(1000);
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
     printf("connected, start mbedtls handshake\n");
+
+    /*
+    * MBEDTLS handshake
+    */
+
+    //Set bio to call ble connection
+    //mbedtls_ssl_set_bio( &ssl, &ble_conn_handle, ble_write, ble_read, NULL );
+    //TODO: ble_write, ble_read move above connection?
+
+    // handshake
+    int ret;
+    do ret = mbedtls_ssl_handshake( &ssl );
+    while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
+           ret == MBEDTLS_ERR_SSL_WANT_WRITE );
+
+    if( ret != 0 )
+    {
+        mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
+        abort();
+    }
     
 
     printf("main loop starting\n");
@@ -205,6 +279,7 @@ int main(void) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
+        //TODO: send data packets while connected
     }
 
     // Cleanup 

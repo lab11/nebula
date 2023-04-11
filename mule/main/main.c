@@ -591,7 +591,7 @@ void mbedtls_stuff() {
 
     // Set bio to call ble connection
     //mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
-    //TODO: ble_write, ble_read
+    //TODO: ble_write, ble_read move above connection?
 
     //Handshake 
     error_code = mbedtls_ssl_handshake(&ssl);
@@ -601,7 +601,7 @@ void mbedtls_stuff() {
     }
 
     mbedtls_ssl_session_reset(&ssl);
-    // TODO call mbedtls_ssl_session_rest(&ssl) when new connection
+    // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
 
     printf("mbedtls done\n");
 
