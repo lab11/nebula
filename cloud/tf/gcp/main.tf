@@ -8,6 +8,10 @@ terraform {
       source = "hashicorp/google"
       version = "~> 4.61.0"
     }
+    random = {
+      source = "hashicorp/random"
+      version = "~> 3.5.0"
+    }
   }
 }
 
@@ -25,6 +29,19 @@ provider "google" {
   project     = "opportunistic-networks-galaxy"
   region      = var.default_region
 }
+
+// --- Store terraform state in GCP storage bucket ---
+resource "random_id" "bucket_prefix" {
+  byte_length = 8
+}
+
+resource "google_storage_bucket" "tfstate" {
+  name          = "${random_id.bucket_prefix.hex}-bucket-tfstate"
+  location      = var.default_region
+  force_destroy = false
+  storage_class = "STANDARD"
+}
+// --- end ---
 
 data "google_iam_policy" "noauth" {
   binding {
