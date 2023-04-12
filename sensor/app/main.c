@@ -47,13 +47,14 @@ static simple_ble_config_t ble_config = {
 };
 
 //Set up BLE service and characteristic for connection with ESP 
-static simple_ble_service_t sensor_service = {{
-    .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
-                0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
-}};
+// static simple_ble_service_t sensor_service = {{
+//     .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
+//                 0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
+// }};
+static simple_ble_service_t sensor_service = {.uuid128 = {0xF3,0xAB}};
 
-static simple_ble_char_t sensor_state_char = {.uuid16 = 0x8911};
-static bool sensor_state = false;
+static simple_ble_char_t sensor_state_char = {.uuid16 = 0xF2AB};
+static char sensor_state[25]; //TODO: fix this
 
 simple_ble_app_t* simple_ble_app;
 
@@ -65,19 +66,6 @@ int logging_init() {
     return error_code;
 }
 
-void ble_evt_write(ble_evt_t const* p_ble_evt) {
-    if (simple_ble_is_char_event(p_ble_evt, &sensor_state_char)) {
-      printf("Got write to LED characteristic!\n");
-      if (sensor_state) {
-        printf("Turning on LED!\n");
-        nrf_gpio_pin_clear(LED);
-      } else {
-        printf("Turning off LED!\n");
-        nrf_gpio_pin_set(LED);
-      }
-    }
-}
-
 int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
 {
     //Call TRNG peripheral:
@@ -86,6 +74,99 @@ int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
 
     // Return 0 on success
     return 0;
+}
+
+// // Function to send data over BLE
+int ble_write(const unsigned char *buf, size_t len)
+{
+    // Check if BLE connection handle is valid
+    if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
+        printf("BLE connection handle is invalid!");
+        return MBEDTLS_ERR_NET_INVALID_CONTEXT;
+    }
+
+    // Check connection status 
+    int ret_code;
+    ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
+    printf("Connection status: %d", ret_code);
+    while (ret_code == NRF_ERROR_BUSY) {
+        printf("Connection status: %d", ret_code);
+        nrf_delay_ms(1000);
+        ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
+    }
+
+    printf("data length: %d\n", len);
+    if (len > 25) {
+        printf("BLE write too long! Send first chunk.");
+        ble_gattc_write_params_t write_params;
+        memset(&write_params, 0, sizeof(ble_gattc_write_params_t));
+
+        unsigned char chunk[25];
+        memcpy(chunk, buf, 25);
+
+        //print data length
+        printf("data length: %d\n", sizeof(chunk));
+
+        write_params.write_op = BLE_GATT_OP_WRITE_REQ; // Use the appropriate write operation (e.g., BLE_GATT_OP_WRITE_REQ, BLE_GATT_OP_WRITE_CMD)
+        write_params.handle = simple_ble_app->conn_handle; // Handle of the characteristic to write to
+        write_params.p_value = chunk; // Pointer to the data to write TODO: fix to buff
+        write_params.len = sizeof(chunk); // Length of the data to write
+
+        // Use nRF5 SDK API to send data over BLE
+        ret_code_t err_code = sd_ble_gattc_write(simple_ble_app->conn_handle, &write_params);
+        if (err_code != NRF_SUCCESS) {
+            NRF_LOG_ERROR("Failed to write BLE data, error code: %d", err_code);
+            return MBEDTLS_ERR_SSL_WANT_WRITE; // Or appropriate error code for mbedtls
+        }
+
+        printf("wrote to ble! bytes: %d\n",sizeof(chunk));
+
+        return sizeof(chunk);
+    }
+
+    else {
+        ble_gattc_write_params_t write_params;
+        memset(&write_params, 0, sizeof(ble_gattc_write_params_t));
+
+        write_params.write_op = BLE_GATT_OP_WRITE_REQ; // Use the appropriate write operation (e.g., BLE_GATT_OP_WRITE_REQ, BLE_GATT_OP_WRITE_CMD)
+        write_params.handle = simple_ble_app->conn_handle; // Handle of the characteristic to write to
+        write_params.p_value = buf; // Pointer to the data to write TODO: fix to buff
+        write_params.len = len; // Length of the data to write
+
+        // Use nRF5 SDK API to send data over BLE
+        ret_code_t err_code = sd_ble_gattc_write(simple_ble_app->conn_handle, &write_params);
+        if (err_code != NRF_SUCCESS) {
+            NRF_LOG_ERROR("Failed to write BLE data, error code: %d", err_code);
+            return MBEDTLS_ERR_SSL_WANT_WRITE; // Or appropriate error code for mbedtls
+        }
+
+        printf("wrote to ble! bytes: %d\n",len);
+
+        return len;
+    }
+
+
+
+}
+
+// Function to receive data over BLE
+int ble_read(unsigned char *buf, size_t len)
+{
+    // Cast the context to the appropriate data type (if needed)
+    // e.g., ble_gap_conn_ctx_t *conn_ctx = (ble_gap_conn_ctx_t *)ctx;
+
+    // Check if BLE connection handle is valid
+    if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
+        return MBEDTLS_ERR_NET_INVALID_CONTEXT;
+    }
+
+    // Use nRF5 SDK API to receive data over BLE
+    // Note: You would need to implement your own logic to read data from BLE and populate the 'buf' buffer
+    size_t read_len = 0;
+    // Read data from BLE into 'buf' buffer and update 'read_len' accordingly
+    //TODO: update buf with data from ble
+
+    return read_len;
 }
 
 int main(void) {
@@ -145,26 +226,7 @@ int main(void) {
         abort();
     }
 
-    // //Generate a public key and a TLS ServerKeyExchange payload.
-    // error_code = mbedtls_ecdh_make_params(&ctx_sensor, &cli_olen, cli_to_srv,
-    //                                sizeof(cli_to_srv),
-    //                                mbedtls_ctr_drbg_random, &ctr_drbg);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ecdh_make_params %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-
-    // printf("gen 1\n");
-    // // Generate a public key for the sensor
-    // error_code = mbedtls_ecdh_gen_public(
-    //     &ctx_sensor.grp,            // Elliptic curve group
-    //     &ctx_sensor.d,              // Sensor secret key
-    //     &ctx_sensor.Q,              // Sensor public key
-    //     mbedtls_ctr_drbg_random,    
-    //     &ctr_drbg
-    // );
-
+    //TODO: mbedtls_ssl_set_timer_cb
     
     /*
     * Load the certificates and private RSA key
@@ -233,7 +295,7 @@ int main(void) {
     simple_ble_add_service(&sensor_service);
  
     simple_ble_add_characteristic(1, 1, 0, 0,
-        sizeof(sensor_state), (uint8_t*)&sensor_state,
+        sizeof(sensor_state), (char*)&sensor_state,
         &sensor_service, &sensor_state_char);
 
     // Start Advertising
@@ -254,8 +316,10 @@ int main(void) {
     * MBEDTLS handshake
     */
 
+    /*
+
     //Set bio to call ble connection
-    //mbedtls_ssl_set_bio( &ssl, &ble_conn_handle, ble_write, ble_read, NULL );
+    mbedtls_ssl_set_bio( &ssl, ble_conn_handle, ble_write, ble_read, NULL );
     //TODO: ble_write, ble_read move above connection?
 
     // handshake
@@ -269,9 +333,14 @@ int main(void) {
         mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
         abort();
     }
+
+    */
     
 
     printf("main loop starting\n");
+
+    printf("sensor_svc_uuid: %x\n", sensor_service.uuid128);
+    printf("sensor_state_char_uuid: %x\n", sensor_state_char.uuid16);
 
     // Enter main loop.
     int loop_counter = 0;
@@ -279,15 +348,20 @@ int main(void) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
-        //TODO: send data packets while connected
+        //Send data packets while connected
+        char data = "a data packet!";
+        ble_write(data, sizeof(data));
+        loop_counter++;
     }
 
+    printf("done sending data, closing connection\n");
+
     // Cleanup 
-    printf("clean up!\n");
-    mbedtls_ecdh_free(&ctx_sensor);
-    //mbedtls_ecdh_free(&ctx_mule);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
+    // printf("clean up!\n");
+    // mbedtls_ecdh_free(&ctx_sensor);
+    // //mbedtls_ecdh_free(&ctx_mule);
+    // mbedtls_ctr_drbg_free(&ctr_drbg);
+    // mbedtls_entropy_free(&entropy);
 }
 
 

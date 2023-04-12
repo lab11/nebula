@@ -52,15 +52,15 @@ union ble_store_key;
 
 #define SENSOR_SVC_UUID 0x180A // This is the UUID for the Galaxy service
 
-static const ble_uuid_t *sensor_svc_uuid = BLE_UUID128_DECLARE(
-    0x70, 0x6C, 0x98, 0x41, 0xCE, 0x43, 0x14, 0xA9,
-    0xB5, 0x4D, 0x22, 0x2B, 0x89, 0x10, 0xE6, 0x32
+static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
+    0x32, 0xE6, 0x10, 0x89, 0x2B, 0x22, 0x4D, 0xB5,
+    0xA9, 0x14, 0x43, 0xCE, 0x41, 0x98, 0x6C, 0x70
 );
 
-static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
-    0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x11, 0x11,
-    0x22, 0x22, 0x22, 0x22, 0x33, 0x33, 0x33, 0x33
-);
+#define LE_PHY_UUID16               0xABF3
+#define LE_PHY_CHR_UUID16           0xF2AB
+
+//static const ble_uuid_t *sensor_chr_uuid = BLE_UUID16_DECLARE(0x8911);
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -71,73 +71,98 @@ uint16_t ble_conn_handle;
 void ble_store_config_init();
 
 /*
-static int mule_ble_on_read(uint16_t conn_handle, const struct ble_gatt_error *error,
-        struct ble_gatt_attr *attr, void *arg) {
-
-    printf("Read done for subscribable characteristic | status=%d conn_handle=%d\n",
-            error->status, conn_handle);
-
-    if (error->status == 0) {
-        printf("  attr_handle=%d value=", attr->handle);
-        print_mbuf(attr->om); 
-    }
-    printf("\n");
-
-    return 0;
-}
-
-static int mule_ble_on_write(uint16_t conn_handle, const struct ble_gatt_error *error,
-        struct ble_gatt_attr *attr, void *arg) {
-
-    printf("Write made for subscribable characteristic | status=%d conn_handle=%d attr_handle=%d\n",
-            error->status, conn_handle, attr->handle);
-
-    const struct peer *peer = peer_find(conn_handle);
-    const struct peer_chr *chr = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
-    if (chr == NULL) {
-        printf("Error: peer doesn't have the subscribable characteristic\n");
-        return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-    }
-
-    int rc = ble_gattc_read(conn_handle, chr->chr.val_handle, mule_ble_on_read, NULL);
-    if (rc != 0) {
-        printf("Error: failed to read the subscribable characteristic\n");
-        return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-    }
-
-    return 0;
-}
-
-static int mule_ble_on_subscribe(uint16_t conn_haandle, const struct ble_gatt_error *error,
-        struct ble_gatt_attr *attr, void *arg) {
-
-    printf("Subscribe complete to subscribable characteristic | status=%d conn_handle=%d\n",
-            error->status, conn_handle);
+* App call back for read of characteristic has completed
+*/
+static int ble_on_read(uint16_t conn_handle, const struct ble_gatt_error *error,
+                        struct ble_gatt_attr *attr, void *arg) {
     
+    MODLOG_DFLT(INFO, "Read complete; status=%d conn_handle=%d", error->status,conn_handle);
     if (error->status == 0) {
-        printf("  attr_handle=%d value=", attr->handle);
+        MODLOG_DFLT(INFO, " attr_handle=%d value=", attr->handle);
         print_mbuf(attr->om);
     }
-    printf("\n");
-
-    const struct peer *peer = peer_find(conn_handle);
-    const struct peer_chr *chr = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
-    if (chr == NULL) {
-        printf("Error: peer doesn't have the subscribable characteristic\n");
-        return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-    }
-
-    // write a test value to characteristic to see if it notifies us
-    uint8_t value = 0x19;
-    int rc = ble_gattc_write_flat(conn_handle, chr->chr.val_handle, &value, sizeof(value), mule_ble_on_write, NULL);
-    if (rc != 0) {
-        printf("Error: failed to write to the subscribable characteristic | rc=%d\n", rc);
-        return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-    }
+    MODLOG_DFLT(INFO, "\n");
 
     return 0;
 }
+
+/*
+* App call back for write of characteristic has completed
 */
+static int ble_on_write(uint16_t conn_handle, const struct ble_gatt_error *error,
+                        struct ble_gatt_attr *attr, void *arg) {
+
+    MODLOG_DFLT(INFO,"Write complete; status=%d conn_handle=%d attr_handle=%d\n",
+                error->status, conn_handle, attr->handle);
+    return 0;
+}
+
+/*
+* App call back for subscribe to characteristic has completed
+*/
+static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *error,
+                            struct ble_gatt_attr *attr, void *arg) {
+
+    MODLOG_DFLT(INFO, "Subscribe complete; status=%d conn_handle=%d attr_handle=%d\n",
+                error->status, conn_handle, attr->handle);
+    return 0;
+}
+
+static void ble_read(const struct peer *peer) {
+    
+    const struct peer_chr_list *chr_list;
+    const struct peer_chr *chr;
+    int rc;
+
+    /* Find the UUID. */
+    printf("service UUID: %x\n", LE_PHY_UUID16);
+    printf("characteristic UUID: %x\n", LE_PHY_CHR_UUID16);
+    
+    chr =  peer_chr_find_uuid(peer,
+                             BLE_UUID16_DECLARE(LE_PHY_UUID16),
+                             BLE_UUID16_DECLARE(LE_PHY_CHR_UUID16));
+    
+    // peer_chr_find_uuid(peer, BLE_UUID16_DECLARE(SENSOR_SVC_UUID),
+    //                          BLE_UUID128_DECLARE(0x32, 0xE6, 0x10, 0x89, 
+    //                          0x2B, 0x22, 0x4D, 0xB5,
+    //                          0xA9, 0x14, 0x43, 0xCE, 
+    //                          0x41, 0x98, 0x6C, 0x70));
+    if (chr == NULL) {
+        printf("Error: Peer doesn't support NEBULA\n");
+        // printf("service UUID: %x\n", SENSOR_SVC_UUID);
+        // printf("characteristic UUID: %d\n", (int)sensor_chr_uuid);
+    }
+
+    /* Read the characteristic. */
+    rc = ble_gattc_read(peer->conn_handle, chr->chr.val_handle,
+                        ble_on_read, NULL);
+    if (rc != 0) {
+        printf("Error: Failed to read characteristic; rc=%d\n", rc);
+    }
+}
+
+static void ble_write(const struct peer *peer) {
+
+    const struct peer_chr *chr;
+    uint8_t value[2]; //TODO: needs to be input pointer for bios
+    int rc;
+    
+    /* Find the UUID. */
+    chr = peer_chr_find_uuid(peer, SENSOR_SVC_UUID, sensor_chr_uuid);
+    if (chr == NULL) {
+        printf("Error: Peer doesn't support NEBULA\n");
+    }
+
+    /* Write the characteristic. */
+    value[0] = 99;
+    value[1] = 100;
+    rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
+                              value, sizeof(value), ble_on_write, NULL);
+    if (rc != 0) {
+        printf("Error: Failed to write characteristic; rc=%d\n", rc);
+    }
+}
+
 
 /**
  * Initiates the GAP general discovery procedure.
@@ -176,6 +201,56 @@ sensor_scan(void)
     }
 }
 
+void char_discovery_callback(uint16_t conn_handle, int status, struct ble_gatt_chr *chr, void *arg)
+{
+    if (status == 0) {
+        // Characteristic discovery succeeded
+        printf("Characteristic discovery succeeded. Characteristic UUID:");
+    } else {
+        // Characteristic discovery failed
+        printf("Characteristic discovery failed. Status: %d\n", status);
+    }
+}
+
+// Callback function to handle the result of the service discovery
+void service_discovery_callback(uint16_t conn_handle, int status, struct ble_gatt_svc *service, void *arg)
+{
+    if (status == 0) {
+        printf("I'm so tired, things are not going productively\n");
+    }
+        // Service discovery succeeded
+        //printf("Service discovery succeeded. Service UUID: %x\n", service->uuid);
+        
+        // Loop through the characteristics of the discovered service
+        //int rc = ble_gattc_disc_all_chrs(conn_handle, service->start_handle, service->end_handle, char_discovery_callback, NULL);
+        //struct ble_gatt_chr *chr = service->chrs;
+    //     struct ble_gatt_chr *chr;
+    //     uint16_t handle;
+    //     int rc;
+    //     for (handle=service->start_handle; handle <= service->end_handle; handle++) {
+    //         chr = ble_gattc_chr_find_by_val_handle(conn_handle, handle);
+    //         if (chr != NULL) {
+    //             continue;
+    //         }
+    //         else {
+    //             //read the characteristic
+    //             rc = ble_gattc_read(conn_handle, chr->chr.val_handle,
+    //                     ble_on_read, NULL);
+    //             if (rc == 0) {
+    //                 printf(chr->chr.value);
+    //             }
+    //         }
+    //     }
+
+    //     if (rc != 0) {
+    //         printf("Error: Failed to discover characteristics; rc=%d\n", rc);
+    //     }
+    // } else {
+    //     // Service discovery failed
+    //     printf("Service discovery failed. Status: %d\n", status);
+    // }
+}
+
 /**
  * Called when service discovery of the specified peer has completed.
  */
@@ -190,11 +265,11 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
         ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         return;
     }
-
     /* Service discovery has completed successfully.  Now we have a complete
      * list of services, characteristics, and descriptors that the peer
      * supports.
      */
+    
     MODLOG_DFLT(INFO, "Service discovery complete; status=%d "
                 "conn_handle=%d\n", status, peer->conn_handle);
 
@@ -203,6 +278,14 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
      */
     //TODO: add back our own read / write subscribe 
     //blecent_read_write_subscribe(peer);
+
+    int rc = ble_gattc_disc_all_svcs(peer->conn_handle, service_discovery_callback, NULL);
+    if (rc != 0) {
+        printf("Failed to initiate service discovery. Error: %d\n", rc);
+    }
+
+    ble_read(peer);
+    printf("read done\n");
 }
 
 int
@@ -464,15 +547,11 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 }
 
 
-static void
-blecent_on_reset(int reason)
-{
+static void ble_on_reset(int reason) {
     MODLOG_DFLT(ERROR, "Resetting state; reason=%d\n", reason);
 }
 
-static void
-blecent_on_sync(void)
-{
+static void ble_on_sync(void) {
     int rc;
 
     /* Make sure we have proper identity address set (public preferred) */
@@ -591,8 +670,9 @@ void mbedtls_stuff() {
 
     // Set bio to call ble connection
     //mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
-    //TODO: ble_write, ble_read move above connection?
 
+
+/*
     //Handshake 
     error_code = mbedtls_ssl_handshake(&ssl);
     if (error_code) {
@@ -604,6 +684,7 @@ void mbedtls_stuff() {
     // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
 
     printf("mbedtls done\n");
+*/
 
 
 }
@@ -664,8 +745,8 @@ void app_main() {
     printf("nimble initialized\n");
 
     // Configure NimBLE host parameters
-    ble_hs_cfg.reset_cb = blecent_on_reset;
-    ble_hs_cfg.sync_cb = blecent_on_sync;
+    ble_hs_cfg.reset_cb = ble_on_reset;
+    ble_hs_cfg.sync_cb = ble_on_sync;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
     printf("host configured\n");
@@ -693,14 +774,15 @@ void app_main() {
     nimble_port_freertos_init(mule_host_task);
     
     printf("started connection\n");
+
     
     //get connection handle 
 
-    mbedtls_stuff();
+    //mbedtls_stuff();
 
     //TODO: clean up mbedtls stuff?
     
-    for (int i = 20; i >= 0; i--) {
+    for (int i = 30; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
