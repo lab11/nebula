@@ -1,33 +1,91 @@
 # Galaxy Cloud - Provider and Application Servers
 
-## Build and launch using the Makefile
+## Build instructions
 
-    * `make build    # build the docker image`
-    * `make provider # start provider server`
-    * `make app      # start application server`
+Use the included `Makefile` to run the provider and application servers in various configurations.
 
-## Build and launch the Docker
-```bash
-docker build -t my_app .
-docker run -it --rm -p 8000:8000 -e SERVER_MODE=provider my_app
-```
+ * `make build`: compiles a Docker image that runs the provider or application server
+ * `make clean`: cleans build files
 
-## HTTPS Get request
-```bash
-http://0.0.0.0:8000/run_provider?a=1
-```
+### Generate provider keypair
 
-## Provider API
+ * `make keypair`: generates a `keypair.bin` file that the provider Docker image will package as credentials to sign and verify tokens. Don't commit this file to Github :)
 
-* `GET public_params` --> input: nothing, returns: public parameter payload
-* `GET sign_tokens` --> input: list of blinded tokens, returns: list of signed blinded tokens
-* `GET redeem_tokens` --> input: list of unblinded tokens, returns: count of valid tokens
+### Local
 
-## App Server API
+Running locally uses Terraform to spin up some Docker containers. See `tf/local/main.tf` for the up-to-date configuration. Should expose the provider at `localhost:8000` and the application server at `localhost:8080`
 
-* `GET deliver` --> input: data payload, returns: unblinded token
+ * `make local`: compiles and runs both provider application server images using Terraform.
+ * `make destroy-local`: removes Terraform resources and shuts down images.
 
-## Steps for Rust->Python bindings [JL notes]
+### GCP
 
-1. run maturin develop
-2. run python script
+The provider and application servers run as GCP Cloud Run services at the following URLs:
+
+* Provider: `https://provider-vavytk2tca-uc.a.run.app`
+* Application Server: `https://appserver-1-vavytk2tca-uc.a.run.app`
+
+To deploy, you'll first need to install and configure the GCP SDK (e.g. `brew install google-cloud-sdk`) and authenticate:
+
+1. `gcloud init`
+2. `gcloud auth application-default login`
+3. `gcloud auth configure-docker`
+
+Then you'll be able to deploy the services (note: the API will be publicly accessible):
+
+ * `make remote`: Tags the galaxy docker image and pushes it to the Google Container Registry, then starts the services using Terraform.
+ * `make destroy-local`: shuts down Terraform-instantiated services.
+
+## API
+
+### Provider
+
+    * `GET /public_params`
+        Params: (none)
+        Body:   (none)
+
+        Returns:
+            {
+                "result": <encoded public parameter str>
+            }
+
+    * `POST /sign_tokens`
+        Params: (none)
+        Body: 
+            Content-type: application/json
+            {
+                "blinded_tokens": [<encoded blinded token strs>]
+            }
+
+        Returns:
+            {
+                "result": [<encoded signed token strs>]
+            }
+
+    * `POST /redeem_tokens`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "tokens": [<encoded token strs>]
+            }
+
+        Returns:
+            {
+                "result": <number valid tokens>
+            }
+
+### Application Server
+
+    * `POST /deliver`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "data": <payload data>
+            }
+
+        Returns:
+            {
+                "result": <encoded token str>
+            }

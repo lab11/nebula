@@ -25,20 +25,19 @@ RUN rustup default nightly
 COPY . .
 
 # Build python bindings for token library
-RUN maturin build --manifest-path anonymous-tokens-lib/Cargo.toml --release --out .
-RUN pip install --no-cache-dir anonymous_tokens_lib*.whl
-#RUN pip install --no-cache-dir anonymous_tokens_lib-0.1.0-cp39-cp39-manylinux_2_28_x86_64.whl
+RUN maturin build --manifest-path anonymous-tokens-lib/Cargo.toml --release --out ./anonymous_tokens_lib
+RUN pip install --no-cache-dir anonymous_tokens_lib/anonymous_tokens_lib*.whl
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE $SERVER_PORT
 
 # Set the environment variable for the server mode (provider or app)
 ENV SERVER_MODE=provider
 
 # Start the Uvicorn server with the specified server mode
 CMD if [ "$SERVER_MODE" = "provider" ] ; then \
-        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4; \
+        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 4; \
     else \
-        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4; \
+        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 4; \
     fi
 

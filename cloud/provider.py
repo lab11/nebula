@@ -1,19 +1,25 @@
 # provider.py
 import tokenlib
+import util
 
-def provider(a: int) -> int:
+# load keypair (generated with gen_keypair.py)
+with open('keypair.bin', 'rb') as f:
+    _keypair = f.read()
 
-    keypair = tokenlib.generate_keypair()                          # PROVIDER
-    pubparams = tokenlib.get_public_params(keypair)                # PROVIDER
 
-    blinded_token = tokenlib.generate_token(pubparams)             # APP SERVER
-    signed_token = tokenlib.sign_token(keypair, blinded_token)     # PROVIDER
-    token = tokenlib.unblind_token(blinded_token, signed_token)    # APP SERVER
-    #token = bytes(bytearray(len(token)))
+def get_public_params(payload=None) -> str:
+    return util.encode_bytes(tokenlib.get_public_params(_keypair))
 
-    is_valid_token = tokenlib.verify_token(keypair, token)         # PROVIDER
-    print("token is valid?", is_valid_token)
 
-    return 2*a
+def sign_tokens(payload) -> list[str]:
 
-provider(1)
+    decoded_tokens = [util.decode_bytes(token) for token in payload["blinded_tokens"]]
+    signed_tokens = [tokenlib.sign_token(_keypair, token) for token in decoded_tokens]
+
+    return [util.encode_bytes(token) for token in signed_tokens]
+
+
+def redeem_tokens(payload) -> int:
+
+    decoded_tokens = [util.decode_bytes(token) for token in payload["tokens"]]
+    return sum([tokenlib.verify_token(_keypair, token) for token in decoded_tokens])

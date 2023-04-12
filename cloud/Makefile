@@ -1,15 +1,28 @@
-.PHONY: provider app build clean
+.PHONY: build local remote clean destroy-local destroy-remote keypair
 
-provider: build
-	docker run -it --rm -p 8000:8000 -e SERVER_MODE=provider galaxy_cloud
+local: build
+	cd tf/local && terraform init && terraform apply -auto-approve
 
-app: build
-	docker run -it --rm -p 8000:8000 -e SERVER_MODE=app galaxy_cloud
+remote: build
+	docker tag galaxy_cloud gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
+	docker push gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
+
+	cd tf/gcp && terraform init && terraform apply -auto-approve
 
 build:
 	mkdir -p _build
 	cp -r ../ext/anonymous-tokens _build/
-	docker build -t galaxy_cloud --progress=plain .
+	docker build -t galaxy_cloud .
 
-clean:
+clean: 
 	rm -rf _build
+
+destroy-local:
+	cd tf/local && terraform destroy -auto-approve
+
+destroy-remote:
+	cd tf/gcp && terraform destroy -auto-approve
+
+keypair:
+	maturin develop --manifest-path anonymous-tokens-lib/Cargo.toml --release
+	python gen_keypair.py
