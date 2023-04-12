@@ -41,7 +41,7 @@ resource "google_storage_bucket" "tfstate" {
   force_destroy = false
   storage_class = "STANDARD"
 }
-// --- end ---
+// --- End state storage ---
 
 data "google_iam_policy" "noauth" {
   binding {
@@ -55,6 +55,9 @@ data "google_iam_policy" "noauth" {
 resource "google_cloud_run_v2_service" "provider" {
   name     = "provider"
   location = var.default_region
+  labels = {
+    "galaxy-redis" = "true"
+  }
 
   template {
     containers {
@@ -75,6 +78,10 @@ resource "google_cloud_run_v2_service" "provider" {
     scaling {
       max_instance_count = 1
     }
+    vpc_access {
+      connector = google_vpc_access_connector.galaxy_connector.id
+      egress = "PRIVATE_RANGES_ONLY"
+    }
   }
 }
 
@@ -89,6 +96,9 @@ resource "google_cloud_run_service_iam_policy" "provider-noauth" {
 resource "google_cloud_run_v2_service" "appserver-1" {
   name     = "appserver-1"
   location = var.default_region
+  labels = {
+    "galaxy-redis" = "true"
+  }
 
   template {
     containers {
@@ -113,6 +123,10 @@ resource "google_cloud_run_v2_service" "appserver-1" {
     scaling {
       max_instance_count = 1
     }
+    vpc_access {
+      connector = google_vpc_access_connector.galaxy_connector.id
+      egress = "PRIVATE_RANGES_ONLY"
+    }
   }
 }
 
@@ -122,4 +136,57 @@ resource "google_cloud_run_service_iam_policy" "appserver-1-noauth" {
   service  = google_cloud_run_v2_service.appserver-1.name
 
   policy_data = data.google_iam_policy.noauth.policy_data
+}
+
+// Redis
+resource "google_compute_address" "galaxy-redis" {
+  name = "galaxy-redis-ip"
+  subnetwork = google_compute_subnetwork.galaxy_net.id
+  address_type = "INTERNAL"
+}
+
+resource "google_redis_instance" "galaxy-redis" {
+  name = "galaxy-redis"
+  memory_size_gb = 1
+
+  region = var.default_region
+  authorized_network = google_compute_network.galaxy_net.id
+  tier = "STANDARD_HA"
+  redis_version = "REDIS_4_0"
+  reserved_ip_range = google_compute_address.galaxy-redis.address
+}
+
+resource "google_compute_firewall" "galaxy-redis-fw" {
+  name = "galaxy-redis-fw"
+  network = google_compute_network.galaxy_net.id
+  allow {
+    protocol = "tcp"
+    ports = ["6379"]
+  }
+  source_tags = ["galaxy-redis"]
+  target_tags = ["galaxy-redis"]
+}
+
+// VPC configuration
+resource "google_vpc_access_connector" "galaxy_connector" {
+  name   = "galaxy-connector"
+  subnet {
+    name = google_compute_subnetwork.galaxy_net.name
+  }     
+  machine_type = "e2-micro"
+  region       = var.default_region
+  min_instances = 2
+  max_instances = 3
+}
+
+resource "google_compute_subnetwork" "galaxy_net" {
+  name          = "galaxy-subnet"
+  ip_cidr_range = "10.0.1.0/24"
+  region        = var.default_region
+  network       = google_compute_network.galaxy_net.id
+}
+
+resource "google_compute_network" "galaxy_net" {
+  name                    = "galaxy-net"
+  auto_create_subnetworks = false
 }
