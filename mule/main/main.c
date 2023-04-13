@@ -50,17 +50,19 @@ union ble_store_key;
 // c0:98:e5:45:aa:bb
 // 0x180A
 
-#define SENSOR_SVC_UUID 0x180A // This is the UUID for the Galaxy service
+#define NEBULA_SVC_UUID 0x180A // This is the UUID for the Nebula service
 
-static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
-    0x32, 0xE6, 0x10, 0x89, 0x2B, 0x22, 0x4D, 0xB5,
-    0xA9, 0x14, 0x43, 0xCE, 0x41, 0x98, 0x6C, 0x70
+static const ble_uuid_t *sensor_svc_uuid = BLE_UUID128_DECLARE(
+    0x70, 0x6C, 0x98, 0x41, 0xCE, 0x43, 0x14, 0xA9,
+    0xB5, 0x4D, 0x22, 0x2B, 0x89, 0x10, 0xE6, 0x32
 );
 
-#define LE_PHY_UUID16               0xABF3
-#define LE_PHY_CHR_UUID16           0xF2AB
+static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
+    0x70, 0x6C, 0x98, 0x41, 0xCE, 0x43, 0x14, 0xA9,
+    0xB5, 0x4D, 0x22, 0x2B, 0x11, 0x89, 0xE6, 0x32
+);
 
-//static const ble_uuid_t *sensor_chr_uuid = BLE_UUID16_DECLARE(0x8911);
+
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -115,22 +117,19 @@ static void ble_read(const struct peer *peer) {
     int rc;
 
     /* Find the UUID. */
-    printf("service UUID: %x\n", LE_PHY_UUID16);
-    printf("characteristic UUID: %x\n", LE_PHY_CHR_UUID16);
+
+    //print the one we are looking for 
+    char chr_uuid_str[37];
+    char svc_uuid_str[37];
+    ble_uuid_to_str(sensor_svc_uuid, svc_uuid_str);
+    printf("service UUID: %s\n", svc_uuid_str);
+    ble_uuid_to_str(sensor_chr_uuid, chr_uuid_str);
+    printf("characteristic UUID: %s\n", chr_uuid_str);
     
-    chr =  peer_chr_find_uuid(peer,
-                             BLE_UUID16_DECLARE(LE_PHY_UUID16),
-                             BLE_UUID16_DECLARE(LE_PHY_CHR_UUID16));
+    chr =  peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
     
-    // peer_chr_find_uuid(peer, BLE_UUID16_DECLARE(SENSOR_SVC_UUID),
-    //                          BLE_UUID128_DECLARE(0x32, 0xE6, 0x10, 0x89, 
-    //                          0x2B, 0x22, 0x4D, 0xB5,
-    //                          0xA9, 0x14, 0x43, 0xCE, 
-    //                          0x41, 0x98, 0x6C, 0x70));
     if (chr == NULL) {
         printf("Error: Peer doesn't support NEBULA\n");
-        // printf("service UUID: %x\n", SENSOR_SVC_UUID);
-        // printf("characteristic UUID: %d\n", (int)sensor_chr_uuid);
     }
 
     /* Read the characteristic. */
@@ -146,9 +145,11 @@ static void ble_write(const struct peer *peer) {
     const struct peer_chr *chr;
     uint8_t value[2]; //TODO: needs to be input pointer for bios
     int rc;
+
+    printf('in ble_write\n');
     
     /* Find the UUID. */
-    chr = peer_chr_find_uuid(peer, SENSOR_SVC_UUID, sensor_chr_uuid);
+    chr = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
     if (chr == NULL) {
         printf("Error: Peer doesn't support NEBULA\n");
     }
@@ -162,6 +163,32 @@ static void ble_write(const struct peer *peer) {
         printf("Error: Failed to write characteristic; rc=%d\n", rc);
     }
 }
+
+// static void ble_subscribe(const struct peer *peer) {
+
+//     const struct peer_chr *chr;
+//     const struct peer_dsc *dsc;
+//     uint8_t value[2];
+//     int rc;
+
+//     /* Find the UUID. */
+//     chr = peer_dsc_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
+//     if (chr == NULL) {
+//         printf("Error: Peer doesn't support NEBULA\n");
+//     }
+
+//     value[0] = 1;
+//     value[1] = 0;
+//     rc = ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
+//                               value, sizeof value, ble_on_subscribe, NULL);
+//     if (rc != 0) {
+//         MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
+//                            "rc=%d\n", rc);
+//     }
+
+//     return;
+
+// }
 
 
 /**
@@ -201,61 +228,11 @@ sensor_scan(void)
     }
 }
 
-void char_discovery_callback(uint16_t conn_handle, int status, struct ble_gatt_chr *chr, void *arg)
-{
-    if (status == 0) {
-        // Characteristic discovery succeeded
-        printf("Characteristic discovery succeeded. Characteristic UUID:");
-    } else {
-        // Characteristic discovery failed
-        printf("Characteristic discovery failed. Status: %d\n", status);
-    }
-}
-
-// Callback function to handle the result of the service discovery
-void service_discovery_callback(uint16_t conn_handle, int status, struct ble_gatt_svc *service, void *arg)
-{
-    if (status == 0) {
-        printf("I'm so tired, things are not going productively\n");
-    }
-        // Service discovery succeeded
-        //printf("Service discovery succeeded. Service UUID: %x\n", service->uuid);
-        
-        // Loop through the characteristics of the discovered service
-        //int rc = ble_gattc_disc_all_chrs(conn_handle, service->start_handle, service->end_handle, char_discovery_callback, NULL);
-        //struct ble_gatt_chr *chr = service->chrs;
-    //     struct ble_gatt_chr *chr;
-    //     uint16_t handle;
-    //     int rc;
-    //     for (handle=service->start_handle; handle <= service->end_handle; handle++) {
-    //         chr = ble_gattc_chr_find_by_val_handle(conn_handle, handle);
-    //         if (chr != NULL) {
-    //             continue;
-    //         }
-    //         else {
-    //             //read the characteristic
-    //             rc = ble_gattc_read(conn_handle, chr->chr.val_handle,
-    //                     ble_on_read, NULL);
-    //             if (rc == 0) {
-    //                 printf(chr->chr.value);
-    //             }
-    //         }
-    //     }
-
-    //     if (rc != 0) {
-    //         printf("Error: Failed to discover characteristics; rc=%d\n", rc);
-    //     }
-    // } else {
-    //     // Service discovery failed
-    //     printf("Service discovery failed. Status: %d\n", status);
-    // }
-}
-
 /**
  * Called when service discovery of the specified peer has completed.
  */
 static void
-blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
+ble_on_disc_complete(const struct peer *peer, int status, void *arg)
 {
 
     if (status != 0) {
@@ -273,25 +250,21 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
     MODLOG_DFLT(INFO, "Service discovery complete; status=%d "
                 "conn_handle=%d\n", status, peer->conn_handle);
 
-    /* Now perform three GATT procedures against the peer: read,
-     * write, and subscribe to notifications for the ANS service.
+    /* 
+     * Now perform read
      */
-    //TODO: add back our own read / write subscribe 
-    //blecent_read_write_subscribe(peer);
-
-    int rc = ble_gattc_disc_all_svcs(peer->conn_handle, service_discovery_callback, NULL);
-    if (rc != 0) {
-        printf("Failed to initiate service discovery. Error: %d\n", rc);
-    }
 
     ble_read(peer);
     printf("read done\n");
+    ble_write(peer);
+    printf("write done\n");
+    //ble_subscribe(peer); TODO??
+    //printf("subscribe done\n");
 }
 
 int
 ble_uuid_u128(const ble_uuid_t *uuid)
 {
-    //assert(uuid->type == BLE_UUID_TYPE_128);
 
     return uuid->type == BLE_UUID_TYPE_128 ? BLE_UUID128(uuid)->value : 0;
 }
@@ -323,41 +296,13 @@ sensor_should_connect(const struct ble_gap_disc_desc *disc)
     //The device has to advertise support for Galaxy services (0x180a).
     for (i = 0; i < fields.num_uuids16; i++) {
         printf("uuid16 is=%x\n", ble_uuid_u16(&fields.uuids16[i].u));
-        if (ble_uuid_u16(&fields.uuids16[i].u) == 0x180a) {
+        if (ble_uuid_u16(&fields.uuids16[i].u) == 0x180a) { //TODO fix this magic
             return 1;
         }
     }
 
     return 0;
 }
-
-void mbedtls_init() {
-    int error_code;
-
-    // initialize entropy and seed random generator
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg; 
-
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-
-    if ((error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
-        printf("error at line %d: mbedtls_ctr_drbg_seed returned %d\n", __LINE__, error_code);
-        abort();
-    }
-
-    // initialize TLS server parameters
-    mbedtls_x509_crt srvcert;
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_pk_context pkey;
-
-    mbedtls_x509_crt_init(&srvcert);
-    mbedtls_ssl_init(&ssl);
-    mbedtls_ssl_config_init(&conf);
-    mbedtls_pk_init(&pkey);
-}
-
 
 
 /**
@@ -458,7 +403,7 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 
             //Perform service discovery 
             rc = peer_disc_all(event->connect.conn_handle,
-                        blecent_on_disc_complete, NULL);
+                        ble_on_disc_complete, NULL);
             if(rc != 0) {
                 MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
                 return 0;
@@ -669,10 +614,8 @@ void mbedtls_stuff() {
     }
 
     // Set bio to call ble connection
-    //mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
+    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
 
-
-/*
     //Handshake 
     error_code = mbedtls_ssl_handshake(&ssl);
     if (error_code) {
@@ -684,7 +627,6 @@ void mbedtls_stuff() {
     // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
 
     printf("mbedtls done\n");
-*/
 
 
 }
@@ -780,13 +722,13 @@ void app_main() {
 
     //mbedtls_stuff();
 
-    //TODO: clean up mbedtls stuff?
+    //TODO: clean up mbedtls stuff and restart 
     
-    for (int i = 30; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    printf("Restarting now.\n");
-    fflush(stdout);
-    esp_restart();
+    // for (int i = 30; i >= 0; i--) {
+    //     printf("Restarting in %d seconds...\n", i);
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+    // printf("Restarting now.\n");
+    // fflush(stdout);
+    // esp_restart();
 }

@@ -47,14 +47,14 @@ static simple_ble_config_t ble_config = {
 };
 
 //Set up BLE service and characteristic for connection with ESP 
-// static simple_ble_service_t sensor_service = {{
-//     .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
-//                 0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
-// }};
-static simple_ble_service_t sensor_service = {.uuid128 = {0xF3,0xAB}};
+static simple_ble_service_t sensor_service = {{
+    .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
+                0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
+}};
+//static simple_ble_service_t sensor_service = {.uuid128 = {0xF3,0xAB}};
 
-static simple_ble_char_t sensor_state_char = {.uuid16 = 0xF2AB};
-static char sensor_state[25]; //TODO: fix this
+static simple_ble_char_t sensor_state_char = {.uuid16 = 0x8911};
+uint16_t sensor_state = 8; //TODO: fix this
 
 simple_ble_app_t* simple_ble_app;
 
@@ -77,7 +77,7 @@ int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
 }
 
 // // Function to send data over BLE
-int ble_write(const unsigned char *buf, size_t len)
+int ble_write(uint16_t *buf, size_t len)
 {
     // Check if BLE connection handle is valid
     if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
@@ -88,7 +88,7 @@ int ble_write(const unsigned char *buf, size_t len)
     // Check connection status 
     int ret_code;
     ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
-    printf("Connection status: %d", ret_code);
+    printf("Connection status: %d\n", ret_code);
     while (ret_code == NRF_ERROR_BUSY) {
         printf("Connection status: %d", ret_code);
         nrf_delay_ms(1000);
@@ -101,8 +101,8 @@ int ble_write(const unsigned char *buf, size_t len)
         ble_gattc_write_params_t write_params;
         memset(&write_params, 0, sizeof(ble_gattc_write_params_t));
 
-        unsigned char chunk[25];
-        memcpy(chunk, buf, 25);
+        unsigned char *chunk[25];
+        memcpy(&chunk, buf, 25);
 
         //print data length
         printf("data length: %d\n", sizeof(chunk));
@@ -125,6 +125,8 @@ int ble_write(const unsigned char *buf, size_t len)
     }
 
     else {
+        printf("BLE write short enough! Send all data.");
+
         ble_gattc_write_params_t write_params;
         memset(&write_params, 0, sizeof(ble_gattc_write_params_t));
 
@@ -294,7 +296,7 @@ int main(void) {
 
     simple_ble_add_service(&sensor_service);
  
-    simple_ble_add_characteristic(1, 1, 0, 0,
+    simple_ble_add_characteristic(1, 1, 1, 0,
         sizeof(sensor_state), (char*)&sensor_state,
         &sensor_service, &sensor_state_char);
 
@@ -338,19 +340,21 @@ int main(void) {
     
 
     printf("main loop starting\n");
-
-    printf("sensor_svc_uuid: %x\n", sensor_service.uuid128);
-    printf("sensor_state_char_uuid: %x\n", sensor_state_char.uuid16);
+    //int data = 456;
+    //ble_write(data, sizeof(data));
 
     // Enter main loop.
     int loop_counter = 0;
-    while (loop_counter < 10) {
+    while (loop_counter < 100) {
         nrf_gpio_pin_toggle(LED);
         nrf_delay_ms(1000);
         printf("beep!\n");
+        //sensor_state = loop_counter;
+        //simple_ble_notify_char(&sensor_state_char);
         //Send data packets while connected
-        char data = "a data packet!";
-        ble_write(data, sizeof(data));
+        //int data = 12345;
+        //ble_write(sensor_state, sizeof(sensor_state));
+        printf("recieved sensor state: %d\n", sensor_state);
         loop_counter++;
     }
 
