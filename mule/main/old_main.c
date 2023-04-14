@@ -9,10 +9,11 @@
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_chip_info.h"
 #include "esp_flash.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "esp_log.h"
-#include "esp_http_client.h"
-#include "esp_tls.h"
 
 // BLE headers
 // TODO: non-volatile storage headers?
@@ -38,9 +39,6 @@
 #include "mbedtls/ssl_cookie.h"
 //#include "certs.h"
 #include "time.h"
-
-#include "backhaul.h"
-#include "util.h"
 
 struct ble_hs_adv_fields;
 struct ble_gap_conn_desc;
@@ -702,180 +700,91 @@ void mule_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-#define MAX_HTTP_RECV_BUFFER 512
-#define MAX_HTTP_OUTPUT_BUFFER 2048
-
-esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
-
-    static char *output_buffer;  // Buffer to store response of http request from event handler
-    static int output_len;       // Stores number of bytes read
-
-    switch(evt->event_id) {
-        case HTTP_EVENT_ERROR:
-            printf("HTTP_EVENT_ERROR\n");
-            break;
-        case HTTP_EVENT_ON_CONNECTED:
-            printf("HTTP_EVENT_ON_CONNECTED\n");
-            break;
-        case HTTP_EVENT_HEADER_SENT:
-            printf("HTTP_EVENT_HEADER_SENT\n");
-            break;
-        case HTTP_EVENT_ON_HEADER:
-            printf("HTTP_EVENT_ON_HEADER, key=%s, value=%s\n", evt->header_key, evt->header_value);
-            break;
-        case HTTP_EVENT_ON_DATA:
-            printf("HTTP_EVENT_ON_DATA, len=%d\n", evt->data_len);
-            /*
-             *  Check for chunked encoding is added as the URL for chunked encoding used in this example returns binary data.
-             *  However, event handler can also be used in case chunked encoding is used.
-             */
-            if (!esp_http_client_is_chunked_response(evt->client)) {
-                // If user_data buffer is configured, copy the response into the buffer
-                int copy_len = 0;
-                if (evt->user_data) {
-                    copy_len = MAX_HTTP_OUTPUT_BUFFER - output_len;
-                    if (copy_len > evt->data_len) {
-                        copy_len = evt->data_len;
-                    }
-
-                    if (copy_len) {
-                        memcpy(evt->user_data + output_len, evt->data, copy_len);
-                    }
-                } else {
-                    const int buffer_len = esp_http_client_get_content_length(evt->client);
-                    if (output_buffer == NULL) {
-                        output_buffer = (char *) malloc(buffer_len);
-                        output_len = 0;
-                        if (output_buffer == NULL) {
-                            printf("Failed to allocate memory for output buffer\n");
-                            return ESP_FAIL;
-                        }
-                    }
-
-                    copy_len = buffer_len - output_len;
-                    if (copy_len > evt->data_len) {
-                        copy_len = evt->data_len;
-                    }
-                    if (copy_len) {
-                        memcpy(output_buffer + output_len, evt->data, copy_len);
-                    }
-                }
-                output_len += copy_len;
-            }
-            break;
-        case HTTP_EVENT_ON_FINISH:
-            printf("HTTP_EVENT_ON_FINISH\n");
-            if (output_buffer != NULL) {
-                // Response is accumulated in output_buffer. Uncomment the below line to print the accumulated response
-                // ESP_LOG_BUFFER_HEX(TAG, output_buffer, output_len);
-                free(output_buffer);
-                output_buffer = NULL;
-            }
-            output_len = 0;
-            break;
-        case HTTP_EVENT_DISCONNECTED:
-            printf("HTTP_EVENT_DISCONNECTED\n");
-            int mbedtls_err = 0;
-            esp_err_t err = esp_tls_get_and_clear_last_error((esp_tls_error_handle_t)evt->data, &mbedtls_err, NULL);
-            if (err != 0) {
-                printf("Last esp error code: 0x%x\n", err);
-                printf("Last mbedtls failure: 0x%x\n", mbedtls_err);
-            }
-            if (output_buffer != NULL) {
-                free(output_buffer);
-                output_buffer = NULL;
-            }
-            output_len = 0;
-            break;
-        case HTTP_EVENT_REDIRECT:
-            printf("HTTP_EVENT_REDIRECT\n");
-            esp_http_client_set_header(evt->client, "From", "user@example.com");
-            esp_http_client_set_header(evt->client, "Accept", "text/html");
-            esp_http_client_set_redirection(evt->client);
-            break;
-    }
-    return ESP_OK;
-}
-
-void http_get_test(void) {
-
-    esp_http_client_config_t config = {
-        .host = "httpbin.org",
-        .path = "/get",
-        .transport_type = HTTP_TRANSPORT_OVER_TCP,
-        .event_handler = _http_event_handler,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-
-    // GET
-    esp_err_t err = esp_http_client_perform(client);
-    if (err == ESP_OK) {
-        printf("HTTP GET Status = %d, content_length = %"PRIu64"\n",
-                esp_http_client_get_status_code(client),
-                esp_http_client_get_content_length(client));
-    } else {
-        printf("HTTP GET request failed: %s\n", esp_err_to_name(err));
-    }
-
-    esp_http_client_cleanup(client);
-}
-
 void app_main() {
 
-    print_chip_info();
-    init_nvs();
-    init_wifi();
+    printf("Hello!\n");
 
-    //
-    // ~~~~~~~~ NIMBLE SCARY LAND >:( ~~~~~~~~~
-    //
+    /* Print chip information */
+    esp_chip_info_t chip_info;
+    uint32_t flash_size;
+    esp_chip_info(&chip_info);
+    printf("This is %s chip with %d CPU core(s), WiFi%s%s%s, ",
+           CONFIG_IDF_TARGET,
+           chip_info.cores,
+           (chip_info.features & CHIP_FEATURE_BT) ? "/BT" : "",
+           (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
+           (chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
 
-    // Initialize the NimBLE host configuration.
-    int ret = nimble_port_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(tag, "Failed to initialize NimBLE with return code %d ", ret);
+    unsigned major_rev = chip_info.revision / 100;
+    unsigned minor_rev = chip_info.revision % 100;
+    printf("silicon revision v%d.%d, ", major_rev, minor_rev);
+    if(esp_flash_get_size(NULL, &flash_size) != ESP_OK) {
+        printf("Get flash size failed");
         return;
     }
-    printf("NimBLE initialized\n");
+
+    printf("%" PRIu32 "MB %s flash\n", flash_size / (uint32_t)(1024 * 1024),
+           (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+
+    printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
+
+    // Initialize NVS.
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( ret );
+
+    printf("nvs initialized\n");
+
+    // Initialize the NimBLE host configuration.
+    ret = nimble_port_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(tag, "Failed to init nimble %d ", ret);
+        return;
+    }
+
+    printf("nimble initialized\n");
 
     // Configure NimBLE host parameters
     ble_hs_cfg.reset_cb = ble_on_reset;
     ble_hs_cfg.sync_cb = ble_on_sync;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
-    printf("BLE host configured\n");
+    printf("host configured\n");
 
-    //Init GATT and device name 
+    //Init gatt and device name 
     int rc;
 
     rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64);
     if (rc != 0) {
-        ESP_LOGE(tag, "Error initializing GATT server");
+        ESP_LOGE(tag, "error initializing gatt server");
         return;
     }
 
     rc = ble_svc_gap_device_name_set("Lab11 Mule");
     if (rc != 0) {
-        ESP_LOGE(tag, "Error setting device name");
+        ESP_LOGE(tag, "error setting device name");
         return;
     }
 
-    printf("Peer configured and device name set\n");
+    printf("peer configured and device name set\n");
 
     ble_store_config_init();
 
     //Start the muling task 
-    //nimble_port_freertos_init(mule_host_task);
-    //printf("Started connection\n");
+    nimble_port_freertos_init(mule_host_task);
     
-    //
-    // ~~~~~~~~ END ~~~~~~~~~
-    //
+    printf("started connection\n");
 
-    printf("Hello!\n");
+    
+    //get connection handle 
 
-    http_get_test();
+    //mbedtls_stuff();
 
+    //TODO: clean up mbedtls stuff?
+    
     for (int i = 30; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
