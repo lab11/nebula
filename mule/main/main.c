@@ -164,31 +164,33 @@ static void ble_write(const struct peer *peer) {
     }
 }
 
-// static void ble_subscribe(const struct peer *peer) {
+static void ble_subscribe(const struct peer *peer) {
 
-//     const struct peer_chr *chr;
-//     const struct peer_dsc *dsc;
-//     uint8_t value[2];
-//     int rc;
+    const struct peer_chr *chr;
+    const struct peer_dsc *dsc;
+    uint8_t value[2];
+    int rc;
 
-//     /* Find the UUID. */
-//     chr = peer_dsc_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
-//     if (chr == NULL) {
-//         printf("Error: Peer doesn't support NEBULA\n");
-//     }
+    /* Find the UUID. */
+    dsc = peer_dsc_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid,
+                            BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
+    if (dsc == NULL) {
+        printf("Error: Peer doesn't support NEBULA\n");
+    }
 
-//     value[0] = 1;
-//     value[1] = 0;
-//     rc = ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
-//                               value, sizeof value, ble_on_subscribe, NULL);
-//     if (rc != 0) {
-//         MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
-//                            "rc=%d\n", rc);
-//     }
+    /* Subscribe to the characteristic. */
+    value[0] = 1;
+    value[1] = 0;
+    rc = ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
+                              value, sizeof value, ble_on_subscribe, NULL);
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
+                           "rc=%d\n", rc);
+    }
 
-//     return;
+    return;
 
-// }
+}
 
 
 /**
@@ -258,7 +260,7 @@ ble_on_disc_complete(const struct peer *peer, int status, void *arg)
     printf("read done\n");
     ble_write(peer);
     printf("write done\n");
-    //ble_subscribe(peer); TODO??
+    ble_subscribe(peer); 
     //printf("subscribe done\n");
 }
 
