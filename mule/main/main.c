@@ -62,6 +62,10 @@ static const ble_uuid_t *sensor_chr_uuid = BLE_UUID128_DECLARE(
     0xB5, 0x4D, 0x22, 0x2B, 0x11, 0x89, 0xE6, 0x32
 );
 
+static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
+    0x70, 0x6C, 0x98, 0x41, 0xCE, 0x43, 0x14, 0xA9,
+    0xB5, 0x4D, 0x22, 0x2B, 0x12, 0x89, 0xE6, 0x32
+);
 
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
@@ -105,14 +109,21 @@ static int ble_on_write(uint16_t conn_handle, const struct ble_gatt_error *error
 static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *error,
                             struct ble_gatt_attr *attr, void *arg) {
 
-    MODLOG_DFLT(INFO, "Subscribe complete; status=%d conn_handle=%d attr_handle=%d\n",
+    MODLOG_DFLT(INFO, "Subscribe data complete; status=%d conn_handle=%d attr_handle=%d\n",
+                error->status, conn_handle, attr->handle);
+    return 0;
+}
+
+static int ble_on_subscribe_meta(uint16_t conn_handle, const struct ble_gatt_error *error,
+                            struct ble_gatt_attr *attr, void *arg) {
+
+    MODLOG_DFLT(INFO, "Subscribe meta complete; status=%d conn_handle=%d attr_handle=%d\n",
                 error->status, conn_handle, attr->handle);
     return 0;
 }
 
 static void ble_read(const struct peer *peer) {
     
-    const struct peer_chr_list *chr_list;
     const struct peer_chr *chr;
     int rc;
 
@@ -127,6 +138,8 @@ static void ble_read(const struct peer *peer) {
     printf("characteristic UUID: %s\n", chr_uuid_str);
     
     chr =  peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
+
+    //TODO: add metadata read
     
     if (chr == NULL) {
         printf("Error: Peer doesn't support NEBULA\n");
@@ -154,6 +167,8 @@ static void ble_write(const struct peer *peer) {
         printf("Error: Peer doesn't support NEBULA\n");
     }
 
+    //TODO: add metadata write
+
     /* Write the characteristic. */
     value[0] = 99;
     value[1] = 100;
@@ -166,9 +181,11 @@ static void ble_write(const struct peer *peer) {
 
 static void ble_subscribe(const struct peer *peer) {
 
-    const struct peer_chr *chr;
+    //const struct peer_chr *chr;
     const struct peer_dsc *dsc;
+    const struct peer_dsc *dsc_meta;
     uint8_t value[2];
+    uint8_t value_meta[2];
     int rc;
 
     /* Find the UUID. */
@@ -178,15 +195,39 @@ static void ble_subscribe(const struct peer *peer) {
         printf("Error: Peer doesn't support NEBULA\n");
     }
 
-    /* Subscribe to the characteristic. */
+    /* Find the metadata UUID */
+    dsc_meta = peer_dsc_find_uuid(peer, sensor_svc_uuid, metadata_chr_uuid,
+                            BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
+
+    if (dsc_meta == NULL) {
+        printf("Error: Peer doesn't support NEBULA metadata\n");
+    }
+
+    /* Subscribe to the characteristics. */
     value[0] = 1;
     value[1] = 0;
     rc = ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
-                              value, sizeof value, ble_on_subscribe, NULL);
+                              value, sizeof(value), ble_on_subscribe, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
                            "rc=%d\n", rc);
     }
+    printf("rc:=%d\n", rc);
+    printf("subscribing to metadata\n");
+
+    //delay 1 second
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    value_meta[0] = 1;
+    value_meta[1] = 0;
+    rc = ble_gattc_write_flat(peer->conn_handle, dsc_meta->dsc.handle,
+                              value_meta, sizeof(value_meta), ble_on_subscribe_meta, NULL);
+
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "Error: Failed to subscribe to meta characteristic; "
+                           "rc=%d\n", rc);
+    }
+    printf("meta rc:=%d\n", rc);
 
     return;
 
@@ -256,12 +297,12 @@ ble_on_disc_complete(const struct peer *peer, int status, void *arg)
      * Now perform read
      */
 
-    ble_read(peer);
-    printf("read done\n");
-    ble_write(peer);
-    printf("write done\n");
+    //ble_read(peer);
+    //printf("read done\n");
+    //ble_write(peer);
+    //printf("write done\n");
     ble_subscribe(peer); 
-    //printf("subscribe done\n");
+    printf("subscribe done\n");
 }
 
 int
@@ -452,14 +493,19 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_NOTIFY_RX:
         /* Peer sent us a notification or indication. */
+        //uint16_t data;
+        //os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),data);
         MODLOG_DFLT(INFO, "received %s; conn_handle=%d attr_handle=%d "
-                    "attr_len=%d\n",
+                    "attr_len=%d; value=",
                     event->notify_rx.indication ?
                     "indication" :
                     "notification",
                     event->notify_rx.conn_handle,
                     event->notify_rx.attr_handle,
                     OS_MBUF_PKTLEN(event->notify_rx.om));
+        
+        print_mbuf(event->notify_rx.om);
+        printf("\n");
 
         /* Attribute data is contained in event->notify_rx.om. Use
          * `os_mbuf_copydata` to copy the data received in notification mbuf */
