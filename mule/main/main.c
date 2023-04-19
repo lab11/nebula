@@ -67,12 +67,18 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
     0xB5, 0x4D, 0x22, 0x2B, 0x12, 0x89, 0xE6, 0x32
 );
 
+uint8_t sensor_state [510];
+uint8_t sensor_state_data [1500]; //for storing the data 
+char sensor_state_str [1500]; //for storing the certs 
+uint8_t metadata_state [2];
+
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
-static uint8_t peer_addr[6];
 
 uint16_t ble_conn_handle;
+uint16_t metadata_attr_handle;
+uint16_t sensor_attr_handle;
 
 void ble_store_config_init();
 
@@ -153,27 +159,22 @@ static void ble_read(const struct peer *peer) {
     }
 }
 
-static void ble_write(const struct peer *peer) {
+static void ble_write(const struct peer *peer, uint8_t *buf, const ble_uuid_t *chr_uuid) {
 
     const struct peer_chr *chr;
-    uint8_t value[2]; //TODO: needs to be input pointer for bios
     int rc;
 
     printf('in ble_write\n');
     
     /* Find the UUID. */
-    chr = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
+    chr = peer_chr_find_uuid(peer, sensor_svc_uuid, chr_uuid);
     if (chr == NULL) {
         printf("Error: Peer doesn't support NEBULA\n");
     }
 
-    //TODO: add metadata write
-
     /* Write the characteristic. */
-    value[0] = 99;
-    value[1] = 100;
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
-                              value, sizeof(value), ble_on_write, NULL);
+                              buf, sizeof(buf), ble_on_write, NULL);
     if (rc != 0) {
         printf("Error: Failed to write characteristic; rc=%d\n", rc);
     }
@@ -203,6 +204,9 @@ static void ble_subscribe(const struct peer *peer) {
         printf("Error: Peer doesn't support NEBULA metadata\n");
     }
 
+    sensor_attr_handle = dsc->dsc.handle;
+    metadata_attr_handle = dsc_meta->dsc.handle;
+
     /* Subscribe to the characteristics. */
     value[0] = 1;
     value[1] = 0;
@@ -212,9 +216,8 @@ static void ble_subscribe(const struct peer *peer) {
         MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
                            "rc=%d\n", rc);
     }
-    printf("rc:=%d\n", rc);
-    printf("subscribing to metadata\n");
 
+    printf("subscribing to metadata\n");
     //delay 1 second
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
@@ -227,7 +230,6 @@ static void ble_subscribe(const struct peer *peer) {
         MODLOG_DFLT(ERROR, "Error: Failed to subscribe to meta characteristic; "
                            "rc=%d\n", rc);
     }
-    printf("meta rc:=%d\n", rc);
 
     return;
 
@@ -507,8 +509,29 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
         print_mbuf(event->notify_rx.om);
         printf("\n");
 
-        /* Attribute data is contained in event->notify_rx.om. Use
-         * `os_mbuf_copydata` to copy the data received in notification mbuf */
+        //TODO: if data is metadata, update meta data buffer, 
+        //if data is sensor state, update sensor state buffer and metadata buffer
+        if (event->notify_rx.attr_handle == metadata_attr_handle -1 ) { //literally no clue why -1
+            //update metadata buffer
+            os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),metadata_state);
+        }
+        else if (event->notify_rx.attr_handle == sensor_attr_handle - 1) { //literally no clue why -1
+            //update sensor state buffer
+            os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),sensor_state_data);
+            metadata_state[1] += 1; //adding a packet to the metadata
+            //write an ack to the sensor
+            struct peer *peer = peer_find(event->notify_rx.conn_handle);
+            ble_write(peer, metadata_state, metadata_chr_uuid);
+        }
+        else {
+            printf("unknown characteristic data\n");
+        }
+
+        printf("metadata total chunks: %d\n",metadata_state[0]);
+        printf("metadata chunks recieved: %d\n",metadata_state[1]);
+        printf("sensor state data: %d\n",sensor_state_data[0]);
+
+        
         return 0;
 
     case BLE_GAP_EVENT_MTU:
