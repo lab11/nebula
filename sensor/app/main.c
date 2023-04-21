@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 #include "nrf.h"
 #include "nrf_delay.h"
 #include "nrf_uart.h"
@@ -60,14 +61,15 @@ uint8_t sensor_state [510]; //largest possible packet need to send chunks for la
 
 static simple_ble_char_t metadata_state_char = {.uuid16 = 0x8912};
 
-uint8_t metadata_state [2]; // [0] = number of chunks to send, [1] = chunks recieved
+uint8_t metadata_state [3]; // [0] = number of chunks to send, [1] = chunks recieved
 
 simple_ble_app_t* simple_ble_app;
 
-// Silly semaphone to signal when callback is done 
+// Silly semaphore to signal when callback is done 
 bool sema_metadata;
 bool sema_data; 
 
+uint8_t *read_buf;
 
 int logging_init() {
     ret_code_t error_code = NRF_SUCCESS;
@@ -87,24 +89,30 @@ int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
     return 0;
 }
 
-void ble_evt_read(ble_evt_t const * p_ble_evt) { //TODO: do I even need it?
+void ble_evt_write(ble_evt_t const * p_ble_evt) { 
     // Check if the event if on the link for this central
     if (p_ble_evt->evt.gatts_evt.conn_handle != simple_ble_app->conn_handle) {
         return;
     }
-
-    printf("got a write to the connection!\n");
     
     //Check if data is metadata or data and store in correct variable
-    //ble_gattc_evt_read_rsp_t *p_read_resp = &p_ble_evt->evt.gattc_evt.params.read_rsp;
-    if (p_ble_evt->evt.gattc_evt.params.read_rsp.handle == metadata_state_char.char_handle.value_handle) {
+    if (p_ble_evt->evt.gatts_evt.params.write.handle == metadata_state_char.char_handle.value_handle) {
         printf("Metadata recieved!\n");
         memcpy(metadata_state, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
         sema_metadata = 1; // tells the main that the callback is done and data is ready
     } 
-    else if (p_ble_evt->evt.gattc_evt.params.read_rsp.handle == sensor_state_char.char_handle.value_handle) {
+    else if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
         printf("Data recieved!\n");
-        memcpy(sensor_state, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
+        //check metadata to see where to store data 
+        int num_chunks = metadata_state[0];
+        int num_recieved_chunks = metadata_state[1];
+        int readiness = metadata_state[2];
+
+        memcpy(read_buf[num_recieved_chunks*510], p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
+        //num_recieved_chunks++; //or actually write to characteristic 
+        metadata_state[1] +=1;
+        int error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
+        
         sema_data = 1; // tells the main that the callback is done and data is ready
     }
  
@@ -112,15 +120,38 @@ void ble_evt_read(ble_evt_t const * p_ble_evt) { //TODO: do I even need it?
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
 {
+    int error_code = 0;
+    int original_len = len;
+
+    //check we're in a connection
+    if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
+        printf("not connected can't write\n");
+        return -1;
+    }
+
+    //now we can read and write the metadata state 
+    if (metadata_state[2] != 0x00) {
+        printf("ESP32 is not ready to receive data\n");
+        return -1;
+    }
+
+    //wait for metadata sema to be free 
+    while (sema_metadata == 1) {
+        //wait for metadata to be recieved
+    }
+    
     //write metadata test 
     printf("writing metadata\n");
 
-    metadata_state[0] = (len/510);
+    metadata_state[0] = ceil(len/510.0); //number of full packets to send
     metadata_state[1] = 0x00;
-    int error_code;
-    
-    error_code = ble_write(metadata_state, 2, &metadata_state_char, 0);
+    metadata_state[2] = 0x01;
+    error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
 
+    //reset sema since we're done 
+    sema_metadata = 0;
+
+    //Now that sensor has a lock with metadata 
     //Send data packets in chunks of 510 bytes
     int counter = 0;
     int num_sent_packets = 0;
@@ -132,57 +163,70 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         num_sent_packets += 1;
 
         //wait for ack to send next packet
-        error_code = ble_read(&metadata_state_char);
         while (metadata_state[1] != num_sent_packets) {
             printf("waiting for ack\n");
             printf("metadata state: %d\n", metadata_state[1]);
-            error_code = ble_read(&metadata_state_char);
+            printf("num sent packets: %d\n", num_sent_packets);
             nrf_delay_ms(500);
         }
 
-        printf("metadata state: %d\n", metadata_state[1]);
-        printf("sensor state 0: %d\n", sensor_state[0]);
+        printf("number sent packets: %d\n", metadata_state[1]);
     }
     //Send remaining data
     error_code = ble_write(buf[counter], len, &sensor_state_char, 0);
 
-    return error_code;
+    //wait for final ack 
+    //error_code = ble_read(&metadata_state_char);
+    while (metadata_state[1] != num_sent_packets+1) {
+        printf("waiting for final ack\n");
+        //error_code = ble_read(&metadata_state_char);
+        nrf_delay_ms(500);
+    }
+
+    //set metadata state to signal that we are done sending data
+    metadata_state[1] = 0;
+    metadata_state[2] = 0x02;
+
+    error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
+
+    return len;
 }
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) 
 {
     //call ble_read to get metadata
     int error_code;
-    error_code = ble_read(&metadata_state_char);
-    while (sema_metadata == 0 ) {
-        //wait for callback to finish
-    }
+
     //now the read data is in metadata_state
     int num_chunks = metadata_state[0];
     int num_recieved_chunks = metadata_state[1];
-    //set the sema back to 0 because we are done
-    sema_metadata = 0;
+    int readiness = metadata_state[2];
 
-    while (num_recieved_chunks < num_chunks) {
-        // call ble_read to get the next data chunk 
-        error_code = ble_read(&sensor_state_char);
-        while( sema_data == 0 ) {
-            //wait for callback to finish
-        }
-        //now the read data is in sensor_state
-        memcpy(buf[num_recieved_chunks*510], sensor_state, 510);
-        //set the sema back to 0 because we are done copying data 
-        sema_data = 0;
+
+    read_buf = buf;
+
+    while (readiness != 0x02) {
+        printf("not ready to read\n");
+        nrf_delay_ms(500);
+    }
+
+    while (metadata_state[1] < metadata_state[0]) {
+        printf("reading data\n");
+        printf("num_chunks: %d\n", metadata_state[0]);
+        printf("num_recieved_chunks: %d\n", metadata_state[1]);
+        printf("readiness: %d\n", metadata_state[2]);
+        nrf_delay_ms(500);
     }
 
     //recieve the leftover data 
-    error_code = ble_read(&sensor_state_char);
-    while( sema_data == 0 ) {
+    //error_code = ble_read(&sensor_state_char);
+    //while( sema_data == 0 ) {
         //wait for callback to finish
-    }
+    //}
     //now the read data is in sensor_state
-    memcpy(buf[num_recieved_chunks*510], sensor_state, len - num_recieved_chunks*510);
+    //memcpy(buf[num_recieved_chunks*510], sensor_state, len - num_recieved_chunks*510);
 
+    read_buf = NULL;
     return len;
  
 }
@@ -436,21 +480,25 @@ int main(void) {
     printf("read and write data testing\n");
     uint8_t data_buf [1000];
     uint8_t data_back [1000];
+    //chill state to start with
+    metadata_state[0] = 0x00;
+    metadata_state[1] = 0x00;
+    metadata_state[2] = 0x00; 
+
     //make random data 1kB
     for (int i = 0; i < 1000; i++) {
         data_buf[i] = rand() % 256;
     }
-    error_code = ble_write_long(&ble_conn_handle, &data_buf, 1000);
 
+    error_code = ble_write_long(&ble_conn_handle, &data_buf, 1000);
     error_code = ble_read_long(&ble_conn_handle, &data_back, 1000);
 
     printf("data sent and received, checking for errors\n");
     for (int i = 0; i < 1000; i++) {
         if (data_buf[i] != data_back[i]) {
-            printf("error");
+            printf("error\n");
         }
     }
-    printf("no errors found\n");
     
 
     // Enter main loop.

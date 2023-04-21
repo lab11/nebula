@@ -70,7 +70,7 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 uint8_t sensor_state [510];
 uint8_t sensor_state_data [1500]; //for storing the data 
 char sensor_state_str [1500]; //for storing the certs 
-uint8_t metadata_state [2];
+uint8_t metadata_state [3];
 
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
@@ -79,6 +79,10 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
 uint16_t ble_conn_handle;
 uint16_t metadata_attr_handle;
 uint16_t sensor_attr_handle;
+
+//Silly semaphore to signal when data has been written 
+bool sema_metadata;
+bool sema_data; 
 
 void ble_store_config_init();
 
@@ -95,7 +99,18 @@ static int ble_on_read(uint16_t conn_handle, const struct ble_gatt_error *error,
     }
     MODLOG_DFLT(INFO, "\n");
 
-    return 0;
+    // put data into buffer depending on which characteristic was read
+    if (attr->handle == metadata_attr_handle) {
+        printf("Metadata recieved!\n");
+        memcpy(metadata_state, attr->om->om_data, attr->om->om_len);
+        sema_metadata = 1;
+    } else if (attr->handle == sensor_attr_handle) {
+        printf("Data recieved!\n");
+        memcpy(sensor_state, attr->om->om_data, attr->om->om_len);
+        sema_data = 1;
+    }
+
+    return 0; //TODO: should it sometimes return an error?
 }
 
 /*
@@ -110,7 +125,7 @@ static int ble_on_write(uint16_t conn_handle, const struct ble_gatt_error *error
 }
 
 /*
-* App call back for subscribe to characteristic has completed
+* App call back for subscribe to data characteristic has completed
 */
 static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *error,
                             struct ble_gatt_attr *attr, void *arg) {
@@ -120,6 +135,10 @@ static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *e
     return 0;
 }
 
+
+/*
+* App call back for subscribe to data characteristic has completed
+*/
 static int ble_on_subscribe_meta(uint16_t conn_handle, const struct ble_gatt_error *error,
                             struct ble_gatt_attr *attr, void *arg) {
 
@@ -128,24 +147,22 @@ static int ble_on_subscribe_meta(uint16_t conn_handle, const struct ble_gatt_err
     return 0;
 }
 
-static void ble_read(const struct peer *peer) {
+static void ble_read(const struct peer *peer, struct peer_chr *chr) {   
     
-    const struct peer_chr *chr;
+    //const struct peer_chr *chr;
     int rc;
 
     /* Find the UUID. */
 
     //print the one we are looking for 
-    char chr_uuid_str[37];
-    char svc_uuid_str[37];
-    ble_uuid_to_str(sensor_svc_uuid, svc_uuid_str);
-    printf("service UUID: %s\n", svc_uuid_str);
-    ble_uuid_to_str(sensor_chr_uuid, chr_uuid_str);
-    printf("characteristic UUID: %s\n", chr_uuid_str);
+    //char chr_uuid_str[37];
+    //char svc_uuid_str[37];
+    //ble_uuid_to_str(sensor_svc_uuid, svc_uuid_str);
+    //printf("service UUID: %s\n", svc_uuid_str);
+    //ble_uuid_to_str(sensor_chr_uuid, chr_uuid_str);
+    //printf("characteristic UUID: %s\n", chr_uuid_str);
     
-    chr =  peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
-
-    //TODO: add metadata read
+    //chr =  peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
     
     if (chr == NULL) {
         printf("Error: Peer doesn't support NEBULA\n");
@@ -159,22 +176,24 @@ static void ble_read(const struct peer *peer) {
     }
 }
 
-static void ble_write(const struct peer *peer, uint8_t *buf, const ble_uuid_t *chr_uuid) {
+static void ble_write(const struct peer *peer, uint8_t *buf, const struct peer_chr *chr, size_t len) {
 
-    const struct peer_chr *chr;
+    //const struct peer_chr *chr;
     int rc;
 
     printf('in ble_write\n');
     
     /* Find the UUID. */
-    chr = peer_chr_find_uuid(peer, sensor_svc_uuid, chr_uuid);
-    if (chr == NULL) {
-        printf("Error: Peer doesn't support NEBULA\n");
-    }
+    // chr = peer_chr_find_uuid(peer, sensor_svc_uuid, chr);
+    // if (chr == NULL) {
+    //     printf("Error: Peer doesn't support NEBULA\n");
+    // }
+
+    //TODO: still need to output this error where chr is found 
 
     /* Write the characteristic. */
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
-                              buf, sizeof(buf), ble_on_write, NULL);
+                              buf, len, ble_on_write, NULL);
     if (rc != 0) {
         printf("Error: Failed to write characteristic; rc=%d\n", rc);
     }
@@ -233,6 +252,104 @@ static void ble_subscribe(const struct peer *peer) {
 
     return;
 
+}
+
+int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len)
+{
+    // //wait for connection to be established
+    // while (ble_gap_conn_active() == 0) {
+    //     //wait  
+    //     printf("waiting for BLE connection\n");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+
+    //get peer from connection handle and peer chrs from uuids
+    const struct peer *peer = peer_find(ble_conn_handle);
+    const struct peer_chr *chr_metadata = peer_chr_find_uuid(peer, sensor_svc_uuid, metadata_chr_uuid);
+    const struct peer_chr *chr_data = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
+
+    //call ble_write to set metadata
+    metadata_state[0] = (len/510);
+    metadata_state[1] = 0x00;
+
+    //Send data packets in chunks of 510 bytes
+    int counter = 0; 
+    int num_sent_packets = 0; 
+    while (len > 510) {
+        int temp = counter + 510;
+        ble_write(peer, &buf[counter], chr_data, 510);
+        len = len - 510;
+        counter = counter + 510;
+        num_sent_packets += 1;
+
+        //wait for ack to send next packet 
+        //ble_read(peer, chr_metadata);
+        while (metadata_state[1] != num_sent_packets) {
+            printf("waiting for ack\n");
+            printf("metadata state: %d\n", metadata_state[1]);
+            // delay 1 second
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+
+        printf("metadata state: %d\n", metadata_state[1]);
+
+    }
+
+    // Send remaining data 
+    ble_write(peer, &buf[counter], chr_data, len);
+
+    return len;
+}
+
+
+int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) 
+{
+    // //wait for connection to be established
+    // while (ble_gap_conn_active() == 0) {
+    //     //wait  
+    //     printf("waiting for BLE connection\n");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+
+    //get peer from connection handle and peer chrs from uuids 
+    const struct peer *peer = peer_find(ble_conn_handle);
+    const struct peer_chr *chr_metadata = peer_chr_find_uuid(peer, sensor_svc_uuid, metadata_chr_uuid);
+    const struct peer_chr *chr_data = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
+
+    // call ble_read to get metadata 
+    ble_read(peer, chr_metadata);
+    while (sema_metadata == 0) {
+        //wait for callback to finish
+    }
+    //now the read data is in metadata_state
+
+    int num_chunks = metadata_state[0]; 
+    int num_recieved_chunks = metadata_state[1];
+
+    //set the sema back to 0 since we are done with the metadata for now
+    sema_metadata = 0;
+
+    while (num_recieved_chunks < num_chunks) {
+        //call ble_read to get the next data chunk 
+        ble_read(peer, chr_data);
+        while (sema_data == 0) {
+            //wait for callback to finish
+        }
+        //now the read data is in sensor_state 
+        memcpy(buf[num_recieved_chunks*510], sensor_state, 510);
+        //set the sema back to 0 since we are done copying data 
+        sema_data = 0;
+    }
+
+    //recieve the leftover data 
+    ble_read(peer, chr_data);
+    while (sema_data == 0) {
+        //wait for callback to finish
+    }
+    //now the read data is in sensor_state
+    memcpy(buf[num_recieved_chunks*510], sensor_state, len - num_recieved_chunks*510);
+
+    return len;
 }
 
 
@@ -495,8 +612,6 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_NOTIFY_RX:
         /* Peer sent us a notification or indication. */
-        //uint16_t data;
-        //os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),data);
         MODLOG_DFLT(INFO, "received %s; conn_handle=%d attr_handle=%d "
                     "attr_len=%d; value=",
                     event->notify_rx.indication ?
@@ -508,20 +623,35 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
         
         print_mbuf(event->notify_rx.om);
         printf("\n");
-
-        //TODO: if data is metadata, update meta data buffer, 
+ 
         //if data is sensor state, update sensor state buffer and metadata buffer
         if (event->notify_rx.attr_handle == metadata_attr_handle -1 ) { //literally no clue why -1
             //update metadata buffer
             os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),metadata_state);
+            sema_metadata = 1;
+
         }
         else if (event->notify_rx.attr_handle == sensor_attr_handle - 1) { //literally no clue why -1
+            //check metadata to find out where to put the data 
+            int number_of_chunks = metadata_state[0];
+            int number_recieved_chunks = metadata_state[1];
+            int readiness = metadata_state[2];
+
+            printf("number recieved chunks %d\n", number_recieved_chunks);
+            
             //update sensor state buffer
-            os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),sensor_state_data);
+            os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),&sensor_state_data[number_recieved_chunks*510]);
+            
             metadata_state[1] += 1; //adding a packet to the metadata
+            sema_data = 1;
+            sema_metadata = 1;
+
+            printf("writing ack to sensor%d\n", metadata_state[1]);
+
             //write an ack to the sensor
             struct peer *peer = peer_find(event->notify_rx.conn_handle);
-            ble_write(peer, metadata_state, metadata_chr_uuid);
+            struct peer_chr *chr = peer_chr_find_uuid(peer, sensor_svc_uuid, metadata_chr_uuid);
+            ble_write(peer, metadata_state, chr, 3);
         }
         else {
             printf("unknown characteristic data\n");
@@ -529,7 +659,7 @@ mule_ble_gap_event(struct ble_gap_event *event, void *arg)
 
         printf("metadata total chunks: %d\n",metadata_state[0]);
         printf("metadata chunks recieved: %d\n",metadata_state[1]);
-        printf("sensor state data: %d\n",sensor_state_data[0]);
+        printf("metadata readiness: %d\n",metadata_state[2]);
 
         
         return 0;
@@ -787,6 +917,23 @@ void app_main() {
     nimble_port_freertos_init(mule_host_task);
     
     printf("started connection\n");
+
+    //waiting for data transfer 
+    while(metadata_state[2] != 2) {
+        printf("waiting for data transfer\n");
+        printf("metadata_state[2] = %d\n", metadata_state[2]);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    //data transfer complete we can write data to server (or write back to sensor)
+    int len = 1000;
+    len = ble_write_long(&ble_conn_handle, &sensor_state_data, len);
+
+
+    //int len = 0;
+    //uint8_t data_buf[1000];
+    //len = ble_read_long(&ble_conn_handle, &data_buf, 1000);
+    //len = ble_write_long(&ble_conn_handle, &data_buf, len);
 
     
     //get connection handle 
