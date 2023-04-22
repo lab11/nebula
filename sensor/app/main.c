@@ -35,6 +35,7 @@
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
+#define CHUNK_SIZE 200
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -55,7 +56,7 @@ static simple_ble_service_t sensor_service = {{
 
 static simple_ble_char_t sensor_state_char = {.uuid16 = 0x8911};
 
-uint8_t sensor_state [510]; //largest possible packet need to send chunks for larger
+uint8_t sensor_state [CHUNK_SIZE]; //largest possible packet need to send chunks for larger
 
 //Set up BLE characteristic for metadata connection with ESP
 
@@ -65,11 +66,16 @@ uint8_t metadata_state [3]; // [0] = number of chunks to send, [1] = chunks reci
 
 simple_ble_app_t* simple_ble_app;
 
+
+
 // Silly semaphore to signal when callback is done 
 bool sema_metadata;
 bool sema_data; 
 
 uint8_t *read_buf;
+
+//prototype
+int ble_write(uint16_t *buf, uint16_t len, simple_ble_char_t *characteristic, int offset);
 
 int logging_init() {
     ret_code_t error_code = NRF_SUCCESS;
@@ -100,16 +106,26 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         printf("Metadata recieved!\n");
         memcpy(metadata_state, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
         sema_metadata = 1; // tells the main that the callback is done and data is ready
+        printf("done with metadata callback\n");
     } 
-    else if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
+    if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
         printf("Data recieved!\n");
         //check metadata to see where to store data 
         int num_chunks = metadata_state[0];
         int num_recieved_chunks = metadata_state[1];
         int readiness = metadata_state[2];
 
-        memcpy(read_buf[num_recieved_chunks*510], p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
+        memcpy(&read_buf[num_recieved_chunks*CHUNK_SIZE], p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
         //num_recieved_chunks++; //or actually write to characteristic 
+        printf("done with data callback memcpy");
+
+        //print to test data recieved 
+        printf("Data recieved[244]: %x\n", p_ble_evt->evt.gatts_evt.params.write.data[244]);
+        printf("data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+        //printf("num_recieved_chunks: %d\n", num_recieved_chunks);
+        //printf("read_buf[num_recieved_chunks * 510]: %x\n", read_buf[num_recieved_chunks*510]);
+        //printf("read_buf address %d\n", read_buf);
+
         metadata_state[1] +=1;
         int error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
         
@@ -122,6 +138,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 {
     int error_code = 0;
     int original_len = len;
+    uint16_t len_for_write = (uint16_t)len;
 
     //check we're in a connection
     if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
@@ -143,7 +160,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     //write metadata test 
     printf("writing metadata\n");
 
-    metadata_state[0] = ceil(len/510.0); //number of full packets to send
+    metadata_state[0] = ceil(len/(float)CHUNK_SIZE); //number of full packets to send
     metadata_state[1] = 0x00;
     metadata_state[2] = 0x01;
     error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
@@ -153,13 +170,14 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
     //Now that sensor has a lock with metadata 
     //Send data packets in chunks of 510 bytes
+    //TODO: change to for loop on both sensor and esp32 side
     int counter = 0;
     int num_sent_packets = 0;
-    while (len > 510) {
-        int temp = counter + 510;
-        error_code = ble_write(buf[counter],510, &sensor_state_char, 0);
-        len = len - 510;
-        counter = counter + 510;
+    while (len_for_write >= CHUNK_SIZE) {
+        int temp = counter + CHUNK_SIZE;
+        error_code = ble_write(&buf[counter],CHUNK_SIZE, &sensor_state_char, 0);
+        len_for_write -= CHUNK_SIZE;
+        counter = counter + CHUNK_SIZE;
         num_sent_packets += 1;
 
         //wait for ack to send next packet
@@ -173,11 +191,11 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         printf("number sent packets: %d\n", metadata_state[1]);
     }
     //Send remaining data
-    error_code = ble_write(buf[counter], len, &sensor_state_char, 0);
+    //error_code = ble_write(&buf[counter], len_for_write, &sensor_state_char, 0);
 
     //wait for final ack 
     //error_code = ble_read(&metadata_state_char);
-    while (metadata_state[1] != num_sent_packets+1) {
+    while (metadata_state[1] != num_sent_packets) {
         printf("waiting for final ack\n");
         //error_code = ble_read(&metadata_state_char);
         nrf_delay_ms(500);
@@ -205,17 +223,22 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len)
 
     read_buf = buf;
 
+    
+
     while (readiness != 0x02) {
         printf("not ready to read\n");
         nrf_delay_ms(500);
     }
 
     while (metadata_state[1] < metadata_state[0]) {
-        printf("reading data\n");
-        printf("num_chunks: %d\n", metadata_state[0]);
-        printf("num_recieved_chunks: %d\n", metadata_state[1]);
-        printf("readiness: %d\n", metadata_state[2]);
-        nrf_delay_ms(500);
+        //printf("reading data\n");
+        //printf("num_chunks: %d\n", metadata_state[0]);
+        //printf("num_recieved_chunks: %d\n", metadata_state[1]);
+        //printf("readiness: %d\n", metadata_state[2]);
+        //printf("read_buf address in read_long %d\n", read_buf);
+        printf("read_buf[244] in read_long %d\n", read_buf[244]);
+        printf("buf[244] in read_long %d\n", buf[244]);
+        nrf_delay_ms(1000);
     }
 
     //recieve the leftover data 
@@ -232,7 +255,7 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len)
 }
 
 // // Function to send data over BLE
-int ble_write(uint16_t *buf, size_t len, simple_ble_char_t *characteristic, int offset)
+int ble_write(uint16_t *buf, uint16_t len, simple_ble_char_t *characteristic, int offset)
 {
     // Check if BLE connection handle is valid
     if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
@@ -250,6 +273,7 @@ int ble_write(uint16_t *buf, size_t len, simple_ble_char_t *characteristic, int 
     }
 
     printf("writing data to characteristic\n");
+    printf("len: %d\n", len);
 
     ble_gatts_hvx_params_t hvx_params;
     memset(&hvx_params, 0, sizeof(hvx_params));
@@ -267,6 +291,8 @@ int ble_write(uint16_t *buf, size_t len, simple_ble_char_t *characteristic, int 
         nrf_delay_ms(1000);
         ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     }
+
+    printf("len: %d\n", len);
 
     return ret_code;
 
@@ -487,16 +513,19 @@ int main(void) {
 
     //make random data 1kB
     for (int i = 0; i < 1000; i++) {
-        data_buf[i] = rand() % 256;
+        data_buf[i] = 0x01; // rand() % 256;
     }
-
-    error_code = ble_write_long(&ble_conn_handle, &data_buf, 1000);
-    error_code = ble_read_long(&ble_conn_handle, &data_back, 1000);
+    printf("data_back address: %d\n", data_back);
+    error_code = ble_write_long(&ble_conn_handle, data_buf, 1000);
+    error_code = ble_read_long(&ble_conn_handle, data_back, 1000);
 
     printf("data sent and received, checking for errors\n");
     for (int i = 0; i < 1000; i++) {
         if (data_buf[i] != data_back[i]) {
             printf("error\n");
+            printf("data_buf[%d] = %d\n", i, data_buf[i]);
+            printf("data_back[%d] = %d\n", i, data_back[i]);
+            continue;
         }
     }
     
