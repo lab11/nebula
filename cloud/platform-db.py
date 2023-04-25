@@ -1,81 +1,45 @@
 import sqlite3
-import secrets
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
-# Connect to the database (or create it if it does not exist)
-conn = sqlite3.connect('keys.db')
-cursor = conn.cursor()
+class KeyValueDatabase:
+    def __init__(self, db_name='mules.db'):
+        self.db_name = db_name
+        self._init_db()
 
-# Create the 'keys' table if it does not exist
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS keys (
-    id INTEGER PRIMARY KEY,
-    key TEXT UNIQUE,
-    used INTEGER
-)
-''')
-conn.commit()
-
-def generate_key():
-    # Generate a random 128-bit key (32 hex characters)
-    return secrets.token_hex(16)
-
-def insert_key(key, used):
-    with sqlite3.connect('keys.db') as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT INTO keys (key, used) VALUES (?, ?)", (key, used))
+    def _init_db(self):
+        with sqlite3.connect(self.db_name) as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS mules (
+                                mule_id TEXT PRIMARY KEY,
+                                count INTEGER NOT NULL
+                            )''')
             conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
 
-def get_key(used):
-    with sqlite3.connect('keys.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM keys WHERE used=? ORDER BY RANDOM() LIMIT 1", (used,))
-        row = cursor.fetchone()
-        if row:
-            return row[1]
-        else:
-            return None
+    def increment_count(self, mule_id):
+        with sqlite3.connect(self.db_name) as conn:
+            conn.execute('''INSERT OR IGNORE INTO mules (mule_id, count)
+                            VALUES (?, 0)''', (mule_id,))
+            conn.execute('''UPDATE mules
+                            SET count = count + 1
+                            WHERE mule_id = ?''', (mule_id,))
+            conn.commit()
 
-def mark_key_as_used(key):
-    with sqlite3.connect('keys.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE keys SET used=1 WHERE key=?", (key,))
-        conn.commit()
+    def batch_increment_counts(self, mule_ids):
+        with ProcessPoolExecutor(max_workers=32) as executor:
+            executor.map(self.increment_count, mule_ids)
 
-def insert_key_task(unused):
-    while not insert_key(generate_key(), 0):
-        pass
+    def get_counts(self):
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.execute('''SELECT mule_id, count
+                                     FROM mules''')
+            return {row[0]: row[1] for row in cursor}
 
-def insert_and_retrieve_keys(n):
-    # Insert n unique keys
-    with ThreadPoolExecutor(max_workers=32) as executor:
-        executor.map(insert_key_task, range(n))
+if __name__ == '__main__':
+    db = KeyValueDatabase()
 
-    # Retrieve and display unused keys
-    unused_keys = []
-    used_keys = []
+    # Increment counts for mule_ids
+    mule_ids = ['mule_1', 'mule_2', 'mule_3', 'mule_2']
+    db.batch_increment_counts(mule_ids)
 
-    while (key := get_key(0)) is not None:
-        unused_keys.append(key)
-        mark_key_as_used(key)
-
-    print(f"Unused keys: {unused_keys}")
-
-    # Retrieve and display used keys
-    with sqlite3.connect('keys.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM keys WHERE used=1")
-        used_keys = [row[1] for row in cursor.fetchall()]
-
-    print(f"Used keys: {used_keys}")
-
-# Example usage
-insert_and_retrieve_keys(5)
-
-# Close the database connection
-conn.close()
+    # Retrieve the current counts
+    print(db.get_counts())
 
