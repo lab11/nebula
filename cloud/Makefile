@@ -3,6 +3,10 @@
 local: build
 	cd tf/local && terraform init && terraform apply -auto-approve
 
+docker: build
+	docker tag galaxy_cloud gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
+	docker push gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
+
 remote: build
 	docker tag galaxy_cloud gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
 	docker push gcr.io/opportunistic-networks-galaxy/galaxy_cloud:latest
