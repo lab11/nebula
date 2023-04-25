@@ -2,7 +2,7 @@
 #include "nrf_crypto.h"
 #include "nrf_crypto_aes.h"
 
-void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_t *plaintext, uint8_t *ciphertext, uint8_t *tag, size_t length)
+void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_t *plaintext, uint8_t *payload, size_t length)
 {
     ret_code_t ret_val;
     nrf_crypto_aes_context_t aes_ctx;
@@ -32,6 +32,7 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
     }
 
     // Encrypt the plaintext using AES-128 GCM
+    uint8_t ciphertext[length];
     ret_val = nrf_crypto_aes_update(&aes_ctx, plaintext, length, ciphertext);
     if (ret_val != NRF_SUCCESS)
     {
@@ -40,11 +41,17 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
     }
 
     // Compute the authentication tag
+    uint8_t tag[NRF_CRYPTO_AES_IV_SIZE];
     ret_val = nrf_crypto_aes_finalize(&aes_ctx, tag, NRF_CRYPTO_AES_IV_SIZE);
     if (ret_val != NRF_SUCCESS)
     {
         printf("Failed to compute authentication tag. Error: 0x%x\n", ret_val);
         return;
     }
+
+    // Create the payload with the structure: IV || Ciphertext || Authentication Tag
+    memcpy(payload, iv, NRF_CRYPTO_AES_IV_SIZE);
+    memcpy(payload + NRF_CRYPTO_AES_IV_SIZE, ciphertext, length);
+    memcpy(payload + NRF_CRYPTO_AES_IV_SIZE + length, tag, NRF_CRYPTO_AES_IV_SIZE);
 }
 

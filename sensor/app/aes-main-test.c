@@ -10,29 +10,20 @@ int main(void)
 
     uint8_t plaintext[] = "Your message here!";
     size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
-    uint8_t ciphertext[length];
-    uint8_t tag[NRF_CRYPTO_AES_IV_SIZE];
+    size_t payload_length = NRF_CRYPTO_AES_IV_SIZE + length + NRF_CRYPTO_AES_IV_SIZE;
+    uint8_t payload[payload_length];
 
     // Encrypt the character array
-    encrypt_character_array(key, iv, plaintext, ciphertext, tag, length);
+    encrypt_character_array(key, iv, plaintext, payload, length);
 
-    // Print the encrypted data
-    printf("Encrypted data: ");
-    for (size_t i = 0; i < length; i++)
+    // Print the encrypted payload
+    printf("Encrypted payload: ");
+    for (size_t i = 0; i < payload_length; i++)
     {
-        printf("%02x ", ciphertext[i]);
-    }
-    printf("\n");
-
-    // Print the authentication tag
-    printf("Authentication tag: ");
-    for (size_t i = 0; i < NRF_CRYPTO_AES_IV_SIZE; i++)
-    {
-        printf("%02x ", tag[i]);
+        printf("%02x ", payload[i]);
     }
     printf("\n");
 
     return 0;
 }
-                                         
 
