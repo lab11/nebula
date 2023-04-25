@@ -69,11 +69,16 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 );
 
 #define CHUNK_SIZE 200
+#define MAX_PAYLOADS 10
 
 uint8_t sensor_state [CHUNK_SIZE];
-uint8_t sensor_state_data [1500]; //for storing the data 
+uint8_t sensor_state_data [1500]; // for storing the data 
 uint8_t sensor_state_str [1500]; //for storing the certs 
 uint8_t metadata_state [3];
+
+uint8_t big_data [10000];
+uint8_t *payloads [MAX_PAYLOADS];
+int num_payloads;
 
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
@@ -196,7 +201,7 @@ static void ble_write(const struct peer *peer, uint8_t *buf, const struct peer_c
     // }
 
     //TODO: still need to output this error where chr is found 
-    printf("buf[0]%d\n", buf[0]);
+    //printf("buf[0]%d\n", buf[0]);
 
     /* Write the characteristic. */
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
@@ -932,7 +937,20 @@ void app_main() {
     
     printf("started connection\n");
 
-    while(true) { // get data and send data to either server or 
+    //set up packet pointers to beginning of big_data
+    for (int i = 0; i < MAX_PAYLOADS; i++) {
+        payloads[i] = big_data;
+    }
+
+    num_payloads = 0; // initialize the number of payloads to 0, TODO magic number
+    while(num_payloads < 10) { // get data and send data to either server or back to sensor
+
+        //waits for BLE connection to continue 
+        // while (ble_gap_conn_active() == 0) {
+        //     //wait  
+        //     printf("waiting for BLE connection\n");
+        //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+        // }
 
         //waiting for data transfer 
         if (metadata_state[2] != 2) {
@@ -943,6 +961,10 @@ void app_main() {
         }
         else {
             printf("data transfer complete\n");
+            //copy to big buffer using payload pointers
+            memcpy(payloads[num_payloads], sensor_state_data, CHUNK_SIZE*metadata_state[0]); 
+            num_payloads++;
+
             // TODO: do we have data to write to the sensor?
             // TODO: is it time to upload our data? 
             // Go back to waiting for data transfer state
@@ -953,8 +975,13 @@ void app_main() {
             ble_write_long(&ble_conn_handle, metadata_state, 3);
              
         }
-
     }
+
+    //TODO: disconnect and wait to send data to server
+    printf("disconnect BLE\n");
+    nimble_port_stop();
+
+    
 
 
 

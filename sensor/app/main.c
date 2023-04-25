@@ -68,9 +68,6 @@ uint8_t metadata_state [3]; // [0] = number of chunks to send, [1] = chunks reci
 
 simple_ble_app_t* simple_ble_app;
 
-// Silly semaphore to signal when callback is done 
-bool sema_metadata;
-bool sema_data; 
 uint8_t *read_buf;
 
 // Prototype functions
@@ -104,7 +101,6 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
     if (p_ble_evt->evt.gatts_evt.params.write.handle == metadata_state_char.char_handle.value_handle) {
         printf("Metadata recieved!\n");
         memcpy(metadata_state, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
-        sema_metadata = 1; // tells the main that the callback is done and data is ready
     } 
     if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
         printf("Data recieved!\n");
@@ -116,7 +112,6 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         //increment metadata state since we recieved a chunk
         metadata_state[1] +=1;
         int error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
-        sema_data = 1; // tells the main that the callback is done and data is ready
     }
  
 }
@@ -138,11 +133,6 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         printf("ESP32 is not ready to receive data\n");
         return -1;
     }
-
-    //wait for metadata sema to be free 
-    // while (sema_metadata == 1) {
-    //     //wait for metadata to be recieved
-    // }
     
     //write metadata test 
     printf("writing metadata\n");
@@ -151,9 +141,6 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     metadata_state[1] = 0x00;
     metadata_state[2] = 0x01;
     error_code = ble_write(metadata_state, 3, &metadata_state_char, 0);
-
-    //reset sema since we're done 
-    //sema_metadata = 0;
 
     //Now that sensor has a lock with metadata 
     //Send data packets in chunks of 510 bytes
@@ -454,18 +441,20 @@ int main(void) {
     //Wait for connection
     uint16_t ble_conn_handle = simple_ble_app->conn_handle;
 
-    while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
-        printf("waiting to connect..\n");
-        nrf_delay_ms(1000);
-        ble_conn_handle = simple_ble_app->conn_handle;
-    }
+
 
     //Read and write test
     //data_test(ble_conn_handle);
 
     //End-to-End test
-
     while(true) {
+
+        while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
+            printf("waiting to connect..\n");
+            nrf_delay_ms(1000);
+            ble_conn_handle = simple_ble_app->conn_handle;
+        }
+
         if (metadata_state[2] == 2 ) {
             printf("waiting for mule to send data back\n");
             nrf_delay_ms(5000); // give em 5 seconds
@@ -481,19 +470,12 @@ int main(void) {
             // time to send some more data //todo make sensor state data
             printf("time to send more!\n");
             uint8_t data_test [1000];
-            error_code = ble_write_long(&ble_conn_handle, data_test, 1000);
-            //nrf_delay_ms(5000);
+            error_code = ble_write_long(&ble_conn_handle, data, 1000);
             printf("made it through sending data\n");
+            nrf_delay_ms(10000);
 
         }
     }
-
-    //ble_write_long(ble_conn_handle, &data, 5);
-
-
-
-
-
 
     //printf("connected, start mbedtls handshake\n");
 
@@ -521,13 +503,13 @@ int main(void) {
     // }
     
     // Enter main loop.
-    printf("main loop starting\n");
-    int loop_counter = 0;
-    while (loop_counter < 10) {
-        nrf_gpio_pin_toggle(LED);
-        nrf_delay_ms(1000);
-        printf("beep!\n");
-    }
+    // printf("main loop starting\n");
+    // int loop_counter = 0;
+    // while (loop_counter < 10) {
+    //     nrf_gpio_pin_toggle(LED);
+    //     nrf_delay_ms(1000);
+    //     printf("beep!\n");
+    // }
 
     printf("done sending data, closing connection\n");
 
