@@ -69,11 +69,16 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 );
 
 #define CHUNK_SIZE 200
+#define MAX_PAYLOADS 10
 
 uint8_t sensor_state [CHUNK_SIZE];
-uint8_t sensor_state_data [1500]; //for storing the data 
+uint8_t sensor_state_data [1500]; // for storing the data 
 uint8_t sensor_state_str [1500]; //for storing the certs 
 uint8_t metadata_state [3];
+
+uint8_t big_data [10000];
+uint8_t *payloads [MAX_PAYLOADS];
+int num_payloads;
 
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
@@ -196,7 +201,7 @@ static void ble_write(const struct peer *peer, uint8_t *buf, const struct peer_c
     // }
 
     //TODO: still need to output this error where chr is found 
-    printf("buf[0]%d\n", buf[0]);
+    //printf("buf[0]%d\n", buf[0]);
 
     /* Write the characteristic. */
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
@@ -318,7 +323,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) 
 {
-    // //wait for connection to be established
+    // //wait for connection to be established TODO??
     // while (ble_gap_conn_active() == 0) {
     //     //wait  
     //     printf("waiting for BLE connection\n");
@@ -336,7 +341,6 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len)
         //wait for callback to finish
     }
     //now the read data is in metadata_state
-
     int num_chunks = metadata_state[0]; 
     int num_recieved_chunks = metadata_state[1];
 
@@ -830,19 +834,19 @@ void mbedtls_stuff() {
     }
 
     // Set bio to call ble connection
-    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
+    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
-    //Handshake 
-    error_code = mbedtls_ssl_handshake(&ssl);
-    if (error_code) {
-        printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // //Handshake 
+    // error_code = mbedtls_ssl_handshake(&ssl);
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    mbedtls_ssl_session_reset(&ssl);
-    // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
+    // mbedtls_ssl_session_reset(&ssl);
+    // // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
 
-    printf("mbedtls done\n");
+    // printf("mbedtls done\n");
 
 
 }
@@ -933,17 +937,58 @@ void app_main() {
     
     printf("started connection\n");
 
-    //waiting for data transfer 
-    while(metadata_state[2] != 2) {
-        printf("waiting for data transfer\n");
-        printf("metadata_state[2] = %d\n", metadata_state[2]);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //set up packet pointers to beginning of big_data
+    for (int i = 0; i < MAX_PAYLOADS; i++) {
+        payloads[i] = big_data;
     }
 
+    num_payloads = 0; // initialize the number of payloads to 0, TODO magic number
+    while(num_payloads < 10) { // get data and send data to either server or back to sensor
+
+        //waits for BLE connection to continue 
+        // while (ble_gap_conn_active() == 0) {
+        //     //wait  
+        //     printf("waiting for BLE connection\n");
+        //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+        // }
+
+        //waiting for data transfer 
+        if (metadata_state[2] != 2) {
+            //printf("waiting for data transfer\n");
+            //printf("metadata_state[2] = %d\n", metadata_state[2]);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        else {
+            printf("data transfer complete\n");
+            //copy to big buffer using payload pointers
+            memcpy(payloads[num_payloads], sensor_state_data, CHUNK_SIZE*metadata_state[0]); 
+            num_payloads++;
+
+            // TODO: do we have data to write to the sensor?
+            // TODO: is it time to upload our data? 
+            // Go back to waiting for data transfer state
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            metadata_state[0] = 0;
+            metadata_state[1] = 0;
+            metadata_state[2] = 0;
+            ble_write_long(&ble_conn_handle, metadata_state, 3);
+             
+        }
+    }
+
+    //TODO: disconnect and wait to send data to server
+    printf("disconnect BLE\n");
+    nimble_port_stop();
+
+    
+
+
+
     //data transfer complete we can write data to server (or write back to sensor)
-    int len = 1000;
-    printf("sensor state data [0]%d\n", sensor_state_data[0]);
-    len = ble_write_long(&ble_conn_handle, sensor_state_data, len);
+    //int len = 1000;
+    //printf("sensor state data [0]%d\n", sensor_state_data[0]);
+    //len = ble_write_long(&ble_conn_handle, sensor_state_data, len);
 
 
 
