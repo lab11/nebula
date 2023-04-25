@@ -318,7 +318,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) 
 {
-    // //wait for connection to be established
+    // //wait for connection to be established TODO??
     // while (ble_gap_conn_active() == 0) {
     //     //wait  
     //     printf("waiting for BLE connection\n");
@@ -336,7 +336,6 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len)
         //wait for callback to finish
     }
     //now the read data is in metadata_state
-
     int num_chunks = metadata_state[0]; 
     int num_recieved_chunks = metadata_state[1];
 
@@ -830,19 +829,19 @@ void mbedtls_stuff() {
     }
 
     // Set bio to call ble connection
-    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write, ble_read, NULL);
+    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
-    //Handshake 
-    error_code = mbedtls_ssl_handshake(&ssl);
-    if (error_code) {
-        printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // //Handshake 
+    // error_code = mbedtls_ssl_handshake(&ssl);
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    mbedtls_ssl_session_reset(&ssl);
-    // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
+    // mbedtls_ssl_session_reset(&ssl);
+    // // TODO call mbedtls_ssl_session_reset(&ssl) when new connection
 
-    printf("mbedtls done\n");
+    // printf("mbedtls done\n");
 
 
 }
@@ -933,17 +932,36 @@ void app_main() {
     
     printf("started connection\n");
 
-    //waiting for data transfer 
-    while(metadata_state[2] != 2) {
-        printf("waiting for data transfer\n");
-        printf("metadata_state[2] = %d\n", metadata_state[2]);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    while(true) { // get data and send data to either server or 
+
+        //waiting for data transfer 
+        if (metadata_state[2] != 2) {
+            //printf("waiting for data transfer\n");
+            //printf("metadata_state[2] = %d\n", metadata_state[2]);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        else {
+            printf("data transfer complete\n");
+            // TODO: do we have data to write to the sensor?
+            // TODO: is it time to upload our data? 
+            // Go back to waiting for data transfer state
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            metadata_state[0] = 0;
+            metadata_state[1] = 0;
+            metadata_state[2] = 0;
+            ble_write_long(&ble_conn_handle, metadata_state, 3);
+             
+        }
+
     }
 
+
+
     //data transfer complete we can write data to server (or write back to sensor)
-    int len = 1000;
-    printf("sensor state data [0]%d\n", sensor_state_data[0]);
-    len = ble_write_long(&ble_conn_handle, sensor_state_data, len);
+    //int len = 1000;
+    //printf("sensor state data [0]%d\n", sensor_state_data[0]);
+    //len = ble_write_long(&ble_conn_handle, sensor_state_data, len);
 
 
 
