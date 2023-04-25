@@ -820,6 +820,136 @@ void http_get_test(void) {
     esp_http_client_cleanup(client);
 }
 
+// Takes in a NULL-terminated string as a payload.
+void http_attempt_single_upload(char payload[]) {
+    char json_prefix[] = "{\"data\":";
+    char json_suffix[] = "}";
+    char post_data[2048];
+    int prefix_len = sizeof(json_prefix);
+    int suffix_len = sizeof(json_suffix);
+    int payload_len = strlen(payload);
+    
+    // Check to make sure the payload exists.
+    if (payload_len <= 0) {
+        printf("The payload is empty >:(");
+        return;
+    }
+    
+    // Check to make sure the payload isn't too long.
+    if (prefix_len + suffix_len + payload_len <= 2048) {
+        printf("The payload is too long >:(");
+        return;
+    }
+    
+    // If everything looks ok, we do a POST request.
+    esp_http_client_config_t config = {
+        .host = "34.27.170.95", // hehe we only have one APP server :3
+        .path = "/deliver",
+        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .event_handler = _http_event_handler,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    // POST
+    memcpy(post_data, json_prefix, prefix_len);
+    memcpy(post_data + prefix_len, payload, payload_len);
+    memcpy(post_data + prefix_len + payload_len, json_suffix, suffix_len);
+    post_data[prefix_len + payload_len + suffix_len] = 0; // NULL terminate this so we can use strlen().
+    
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+    
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        printf("HTTP POST Status = %d, content_length = %"PRIu64"\n",
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        printf("HTTP POST request failed: %s\n", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+}
+
+// Takes in an array of pointers to NULL-terminated strings.
+void http_attempt_many_uploads(char *payloads[]) {
+    for (int i = 0; i < 100; i++) {
+        // If the next pointer is null, we're done.
+        if (payloads[i] == NULL) {
+            break;
+        }
+        // Otherwise, we do a single POST request.
+        http_attempt_single_upload(payloads[i]);
+    }
+}
+
+// Takes in an array of pointers to NULL-terminated strings.
+void http_attempt_redeem(char *tokens[]) {
+    char json_prefix[] = "{\"tokens\":[";
+    char json_suffix[] = "]}";
+    char post_data[2048];
+    int prefix_len = sizeof(json_prefix);
+    int suffix_len = sizeof(json_suffix);
+    int token_len;
+    int cur_post_length = 0;
+    
+    // Initiate a POST request.
+    esp_http_client_config_t config = {
+        .host = "34.31.110.212", // hehe we hardcode the provider IP :3
+        .path = "/redeem_tokens",
+        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .event_handler = _http_event_handler,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    // Attach the header to our post_data.
+    memcpy(post_data, json_prefix, prefix_len);
+    cur_post_length += prefix_len;
+
+    // Iterate through the tokens and append them all into one JSON string.
+    for (int i = 0; i < 100; i++) {
+        // If the next pointer is null, we're done.
+        if (tokens[i] == NULL) {
+            break;
+        }
+
+        // Slap the next token onto the string.
+        token_len = strlen(tokens[i]);
+        
+        // Check to make sure if it's too big.
+        if (cur_post_length + token_len <= 2048) {
+            printf("YOU HAVE TO MANY TOKENS!!!");
+            return;
+        }
+        
+        memcpy(post_data + cur_post_length, tokens[i], token_len);
+        cur_post_length += token_len;
+        post_data[cur_post_length] = ',';
+        cur_post_length++;
+    }
+    
+    // Attack the suffix to our post data.
+    memcpy(post_data + cur_post_length, json_suffix, suffix_len);
+    post_data[prefix_len + cur_post_length + suffix_len] = 0; // NULL terminate this so we can use strlen() later.
+    
+    // POST
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+    
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        printf("HTTP POST Status = %d, content_length = %"PRIu64"\n",
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        printf("HTTP POST request failed: %s\n", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+}
+
 void app_main() {
 
     print_chip_info();
@@ -872,9 +1002,36 @@ void app_main() {
     // ~~~~~~~~ END ~~~~~~~~~
     //
 
-    printf("Hello!\n");
+    printf("Hello! Doing a quick HTTP GET test :3\n");
 
     http_get_test();
+    
+    printf("Finished our HTTP GET test!\n\n Now starting our fake data upload test! Doing a single upload for now..");
+    
+    // Make some fake data hehe.
+    char fake_data[] = "hehehe this is fake data hehehe";
+    http_attempt_single_upload(fake_data);
+    
+    printf("Finished our single upload test!! Now trying to do multiple uploads!");
+    
+    char fake_data_2[] = "hohoho this is ~more~ fake data!";
+    char *fake_datas[3];
+    fake_datas[0] = fake_data;
+    fake_datas[1] = fake_data_2;
+    fake_datas[2] = NULL;
+    http_attempt_many_uploads(fake_datas);
+    
+    printf("Finished our multiple upload test!! Now trying the token redemption!");
+
+    char *dummy_tokens[] = {
+        "aaaaghghghghghghghghgh",
+        "hehehehehehehehaasodfiho",
+        "p sure tokens don't look like this but",
+        "not really sure what else to put here"
+    };
+    http_attempt_redeem(dummy_tokens);
+    
+    printf("Finished the token redemption test! Hopefully everything works >.>");
 
     for (int i = 30; i >= 0; i--) {
         printf("Restarting in %d seconds...\n", i);
