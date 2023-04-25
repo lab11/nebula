@@ -1,10 +1,10 @@
 import sqlite3
 from concurrent.futures import ProcessPoolExecutor
 
-DEBUG = True
+DEBUG = False
 
 class KeyValueDatabase:
-    def __init__(self, db_name='mules.db'):
+    def __init__(self, db_name='mules.db'): 
         self.db_name = db_name
         self._init_db()
 
