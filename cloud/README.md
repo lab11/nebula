@@ -4,6 +4,11 @@
 * provider-db.py runs a database with schema {mule_id, count}
 * platform-token.db maintains a set of tokens.  
 
+## AES
+* pip install cryptography
+* payload structure is as follows: IV (12 bytes) || Ciphertext || Authentication Tag (16 bytes).
+
+
 ## Build instructions
 
 Use the included `Makefile` to run the provider and application servers in various configurations.
