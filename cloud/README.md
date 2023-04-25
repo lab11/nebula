@@ -1,5 +1,9 @@
 # Galaxy Cloud - Provider and Application Servers
 
+## DAtabases on the Provider
+* provider-db.py runs a database with schema {mule_id, count}
+* platform-token.db maintains a set of tokens.  
+
 ## Build instructions
 
 Use the included `Makefile` to run the provider and application servers in various configurations.
