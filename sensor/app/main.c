@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <math.h>
+#include "app_timer.h"
 #include "nrf.h"
 #include "nrf_delay.h"
 #include "nrf_uart.h"
@@ -15,6 +16,7 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 #include "nrf_drv_rng.h"
+#include "nrf_drv_timer.h"
 #include "simple_ble.h"
 #include "mbedtls/config.h"
 #include "mbedtls/platform.h"
@@ -70,6 +72,9 @@ uint8_t metadata_state [3]; // [0] = number of chunks to send, [1] = chunks reci
 simple_ble_app_t* simple_ble_app;
 
 uint8_t *read_buf;
+
+APP_TIMER_DEF(dtls_int_timer_id);
+APP_TIMER_DEF(dtls_fin_timer_id);
 
 // Prototype functions
 int ble_write(uint16_t *buf, uint16_t len, simple_ble_char_t *characteristic, int offset);
@@ -301,7 +306,64 @@ void data_test(uint16_t ble_conn_handle)
     }
 }
 
+struct dtls_delay_ctx {
+    uint32_t int_ms;
+    uint32_t fin_ms;
+    bool int_timer_expired;
+    bool fin_timer_expired;
+};
+static struct dtls_delay_ctx delay_ctx;
 
+static void dtls_int_timer_handler(void * p_context) {
+    struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) p_context;
+    ctx->int_timer_expired = true;
+}
+
+static void dtls_fin_timer_handler(void * p_context) {
+    struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) p_context;
+    ctx->fin_timer_expired = true;
+}
+
+void dtls_set_delay(void *data, uint32_t int_ms, uint32_t fin_ms) {
+
+    struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) data;
+    ctx->int_ms = int_ms;
+    ctx->fin_ms = fin_ms;
+    ctx->int_timer_expired = false;
+    ctx->fin_timer_expired = false;
+
+    ret_code_t error_code = app_timer_stop_all();
+    APP_ERROR_CHECK(error_code);
+
+    // don't restart timers if we don't have a delay
+    if (int_ms == 0 && fin_ms == 0) {
+        return;
+    }
+
+    error_code = app_timer_start(dtls_int_timer_id, APP_TIMER_TICKS(int_ms), data);
+    APP_ERROR_CHECK(error_code);
+
+    error_code = app_timer_start(dtls_fin_timer_id, APP_TIMER_TICKS(fin_ms), data);
+    APP_ERROR_CHECK(error_code);
+}
+
+int dtls_get_delay(void *data) {
+
+    struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) data;
+    if (ctx->fin_ms == 0) {
+        return -1;
+    }
+
+    if (ctx->fin_timer_expired) {
+        return 2;
+    }
+
+    if (ctx->int_timer_expired) {
+        return 1;
+    }
+
+    return 0; 
+}
 
 int main(void) {
 
@@ -313,6 +375,18 @@ int main(void) {
 
     // Crypto initialization
     error_code = nrf_crypto_init();
+
+    // put simple BLE up here so we can piggy-back on the app timer initialization
+    simple_ble_app = simple_ble_init(&ble_config);
+
+    error_code = app_timer_create(&dtls_int_timer_id, APP_TIMER_MODE_SINGLE_SHOT, dtls_int_timer_handler);
+    APP_ERROR_CHECK(error_code);
+
+    error_code = app_timer_create(&dtls_fin_timer_id, APP_TIMER_MODE_SINGLE_SHOT, dtls_fin_timer_handler);
+    APP_ERROR_CHECK(error_code);
+
+    //error_code = app_timer_start(dtls_int_timer_id, APP_TIMER_TICKS(1000), NULL);
+    //APP_ERROR_CHECK(error_code);
 
     // mbedTLS initialization
 
@@ -330,7 +404,7 @@ int main(void) {
     mbedtls_ssl_config conf;
     mbedtls_x509_crt srvcert;
     mbedtls_pk_context pkey;
-    mbedtls_timing_delay_context timer;
+    //mbedtls_timing_delay_context timer;
 
 
     // mbedtls_net_init(&listen_fd);
@@ -445,8 +519,7 @@ int main(void) {
         
     }
 
-    mbedtls_ssl_set_timer_cb(&ssl, &timer, mbedtls_timing_set_delay,
-                             mbedtls_timing_get_delay);
+    mbedtls_ssl_set_timer_cb(&ssl, &delay_ctx, dtls_set_delay, dtls_get_delay);
 
     printf(" ok\n");
 
@@ -577,7 +650,6 @@ int main(void) {
     /*
     * BLE initialization
     */
-    simple_ble_app = simple_ble_init(&ble_config);
 
     simple_ble_add_service(&sensor_service);
  

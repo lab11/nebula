@@ -24,7 +24,7 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
     }
 
     // Set the IV
-    ret_val = nrf_crypto_aes_iv_set(&aes_ctx, iv, NRF_CRYPTO_AES_IV_SIZE);
+    //ret_val = nrf_crypto_aes_iv_set(&aes_ctx, iv, NRF_CRYPTO_AES_IV_SIZE);
     if (ret_val != NRF_SUCCESS)
     {
         printf("Failed to set AES IV. Error: 0x%x\n", ret_val);
@@ -42,7 +42,7 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
 
     // Compute the authentication tag
     uint8_t tag[NRF_CRYPTO_AES_IV_SIZE];
-    ret_val = nrf_crypto_aes_finalize(&aes_ctx, tag, NRF_CRYPTO_AES_IV_SIZE);
+    //ret_val = nrf_crypto_aes_finalize(&aes_ctx, tag, NRF_CRYPTO_AES_IV_SIZE);
     if (ret_val != NRF_SUCCESS)
     {
         printf("Failed to compute authentication tag. Error: 0x%x\n", ret_val);

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "aes_gcm.h"
 
+/*
 int main(void)
 {
     uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -14,7 +15,7 @@ int main(void)
     uint8_t payload[payload_length];
 
     // Encrypt the character array
-    encrypt_character_array(key, iv, plaintext, payload, length);
+    //encrypt_character_array(key, iv, plaintext, payload, length);
 
     // Print the encrypted payload
     printf("Encrypted payload: ");
@@ -26,4 +27,4 @@ int main(void)
 
     return 0;
 }
-
+*/
