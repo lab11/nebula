@@ -1,33 +1,53 @@
-import redis
+import sqlite3
+import threading
 
-class KeyValueDatabase:
-    def __init__(self, host='localhost', port=6379, db=0):
-        self.redis_client = redis.StrictRedis(host=host, port=port, db=db)
+DEBUG = True
 
-        # Initialize the database and set counts to 0
-        for key in self.redis_client.scan_iter('*'):
-            self.redis_client.set(key, 0)
+class StringSet:
+    def __init__(self):
+        self.conn = sqlite3.connect("strings.db")
+        self.lock = threading.Lock()
+        self._create_table()
 
-    def increment_count(self, mule_id):
-        self.redis_client.incr(mule_id)
+    def _create_table(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strings (
+                value TEXT PRIMARY KEY
+            )
+        """)
+        self.conn.commit()
 
-    def batch_increment_counts(self, mule_ids):
-        for mule_id in mule_ids:
-            self.increment_count(mule_id)
+    def add_new_elements(self, new_strings):
+        with self.lock:
+            cursor = self.conn.cursor()
+            initial_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
 
-    def get_counts(self):
-        counts = {}
-        for key in self.redis_client.scan_iter('*'):
-            counts[key.decode()] = int(self.redis_client.get(key))
-        return counts
+            for string in new_strings:
+                try:
+                    cursor.execute("INSERT INTO strings (value) VALUES (?)", (string,))
+                except sqlite3.IntegrityError:
+                    pass
 
-if __name__ == '__main__':
-    db = KeyValueDatabase()
+            self.conn.commit()
 
-    # Increment counts for mule_ids
-    mule_ids = ['mule_1', 'mule_2', 'mule_3']
-    db.batch_increment_counts(mule_ids)
+            final_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
+            return final_size - initial_size
 
-    # Retrieve the current counts
-    print(db.get_counts())
+    def close(self):
+        self.conn.close()
+
+if DEBUG:
+
+    string_set = StringSet()
+
+    # Add new strings to the set and print the number of new elements added
+    new_strings = ['hello', 'world', 'foo', 'bar']
+    print(string_set.add_new_elements(new_strings))  # Output: 4
+
+    # Add some new strings and some existing strings
+    new_strings = ['hello', 'world', 'python', 'example']
+    print(string_set.add_new_elements(new_strings))  # Output: 2
+
+    string_set.close()
 
