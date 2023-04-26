@@ -165,7 +165,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
             printf("waiting for ack\n");
             printf("metadata state: %d\n", metadata_state[1]);
             printf("num sent packets: %d\n", num_sent_packets);
-            nrf_delay_ms(500);
+            nrf_delay_ms(10);
         }
 
         printf("number sent packets: %d\n", metadata_state[1]);
@@ -174,7 +174,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     //wait for final ack from sensor
     while (metadata_state[1] != num_sent_packets) {
         printf("waiting for final ack\n");
-        nrf_delay_ms(500);
+        nrf_delay_ms(10);
     }
 
     //set metadata state to signal that we are done sending data
@@ -225,7 +225,7 @@ int ble_write(uint16_t *buf, uint16_t len, simple_ble_char_t *characteristic, in
     ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
     while (ret_code != BLE_CONN_STATUS_CONNECTED) {
         printf("Connection status: %d", ret_code);
-        nrf_delay_ms(1000);
+        nrf_delay_ms(100);
         ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
     }
 
@@ -240,7 +240,7 @@ int ble_write(uint16_t *buf, uint16_t len, simple_ble_char_t *characteristic, in
     ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     while (ret_code == NRF_ERROR_INVALID_STATE) {
         printf("Error writing try again\n");
-        nrf_delay_ms(1000);
+        nrf_delay_ms(100);
         ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     }
 
@@ -262,7 +262,7 @@ int ble_read(simple_ble_char_t *characteristic)
     ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
     while (ret_code == NRF_ERROR_BUSY) {
         printf("Connection status: %d", ret_code);
-        nrf_delay_ms(1000);
+        nrf_delay_ms(100);
         ret_code = ble_conn_state_status(simple_ble_app->conn_handle);
     }
 
@@ -270,7 +270,7 @@ int ble_read(simple_ble_char_t *characteristic)
     while (ret_code != NRF_SUCCESS) {
         printf("Error reading try again\n");
         ret_code = sd_ble_gattc_read(simple_ble_app->conn_handle, characteristic->char_handle.value_handle, 0);
-        nrf_delay_ms(1000);
+        nrf_delay_ms(100);
     }
     
     return ret_code;
@@ -557,7 +557,7 @@ int main(void) {
 
     while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
         printf("waiting to connect..\n");
-        nrf_delay_ms(1000);
+        nrf_delay_ms(100);
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
@@ -604,13 +604,13 @@ int main(void) {
 
         while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
             printf("waiting to connect..\n");
-            nrf_delay_ms(1000);
+            nrf_delay_ms(100);
             ble_conn_handle = simple_ble_app->conn_handle;
         }
 
         if (metadata_state[2] == 2 ) {
             printf("waiting for mule to send data back\n");
-            nrf_delay_ms(5000); // give em 5 seconds
+            nrf_delay_ms(5000); // give em .5 seconds
             metadata_state[0] = 0;
             metadata_state[1] = 0;
             metadata_state[2] = 0;
@@ -622,10 +622,10 @@ int main(void) {
         else {
             // time to send some more data //todo make sensor state data
             printf("time to send more!\n");
-            uint8_t data_test [1000];
+            //uint8_t data_test [1000];
             error_code = ble_write_long(&ble_conn_handle, data, 1000);
             printf("made it through sending data\n");
-            nrf_delay_ms(10000);
+            nrf_delay_ms(500);
 
         }
     }

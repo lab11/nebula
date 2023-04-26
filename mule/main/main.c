@@ -71,7 +71,7 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 );
 
 #define CHUNK_SIZE 200
-#define MAX_PAYLOADS 10
+#define MAX_PAYLOADS 1
 #define READ_TIMEOUT_MS 1000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11"
@@ -196,15 +196,6 @@ static void ble_write(const struct peer *peer, uint8_t *buf, const struct peer_c
     int rc;
 
     printf('in ble_write\n');
-    
-    /* Find the UUID. */
-    // chr = peer_chr_find_uuid(peer, sensor_svc_uuid, chr);
-    // if (chr == NULL) {
-    //     printf("Error: Peer doesn't support NEBULA\n");
-    // }
-
-    //TODO: still need to output this error where chr is found 
-    //printf("buf[0]%d\n", buf[0]);
 
     /* Write the characteristic. */
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
@@ -299,7 +290,6 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         num_sent_packets += 1;
 
         //wait for ack to send next packet 
-        //ble_read(peer, chr_metadata);
         while (metadata_state[1] != num_sent_packets) {
             printf("waiting for ack\n");
             printf("metadata state: %d\n", metadata_state[1]);
@@ -310,9 +300,6 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         printf("metadata state: %d\n", metadata_state[1]);
 
     }
-
-    // Send remaining data 
-    //ble_write(peer, &buf[counter], chr_data, len);
 
     //write complete put back in listening mode
     metadata_state[0] = 0;
@@ -431,13 +418,8 @@ static void ble_on_disc_complete(const struct peer *peer, int status, void *arg)
                 "conn_handle=%d\n", status, peer->conn_handle);
 
     /* 
-     * Now perform read
+     * Now subscribe to sensor data and metadata notifications
      */
-
-    //ble_read(peer);
-    //printf("read done\n");
-    //ble_write(peer);
-    //printf("write done\n");
     ble_subscribe(peer); 
     printf("subscribe done\n");
 }
@@ -631,8 +613,8 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                     event->notify_rx.attr_handle,
                     OS_MBUF_PKTLEN(event->notify_rx.om));
         
-        print_mbuf(event->notify_rx.om);
-        printf("\n");
+        //print_mbuf(event->notify_rx.om);
+        //printf("\n");
  
         //if data is sensor state, update sensor state buffer and metadata buffer
         if (event->notify_rx.attr_handle == metadata_attr_handle -1 ) { //literally no clue why -1
@@ -682,22 +664,6 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                     event->mtu.value);
         return 0;
 
-    // case BLE_GAP_EVENT_REPEAT_PAIRING:
-    //     /* We already have a bond with the peer, but it is attempting to
-    //      * establish a new secure link.  This app sacrifices security for
-    //      * convenience: just throw away the old bond and accept the new link.
-    //      */
-
-    //     /* Delete the old bond. */
-    //     rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-    //     assert(rc == 0);
-    //     ble_store_util_delete_peer(&desc.peer_id_addr);
-
-    //     /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
-    //      * continue with the pairing operation.
-    //      */
-    //     return BLE_GAP_REPEAT_PAIRING_RETRY;
-
     default:
         return 0;
     }
@@ -738,13 +704,6 @@ void mbedtls_stuff() {
     //mbedtls_x509_crt cacert;
     mbedtls_timing_delay_context timer;
 
-//     ((void) argc);
-//     ((void) argv);
-
-// #if defined(MBEDTLS_DEBUG_C)
-//     mbedtls_debug_set_threshold(DEBUG_LEVEL);
-// #endif
-
     /*
      * 0. Initialize the RNG and the session data
      */
@@ -780,13 +739,9 @@ void mbedtls_stuff() {
         
     }
 
-    /* OPTIONAL is usually a bad choice for security, but makes interop easier
-     * in this simplified example, in which the ca chain is hardcoded.
-     * Production code should set a proper ca chain and use REQUIRED. */
+    //TODO: OPTIONAL is usually a bad choice for security
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    //mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
     mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
 
     if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
@@ -798,119 +753,6 @@ void mbedtls_stuff() {
         mbedtls_printf(" failed\n  ! mbedtls_ssl_set_hostname returned %d\n\n", ret);
         
     }
-
-    // mbedtls_ssl_set_bio(&ssl, &server_fd,
-    //                     mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
-
-    // mbedtls_ssl_set_timer_cb(&ssl, &timer, mbedtls_timing_set_delay,
-    //                          mbedtls_timing_get_delay);
-
-    // mbedtls_printf(" ok\n");
-
-
-
-    //int error_code;
-
-    /*
-    * Initialize the RNG and the session data
-    */
-
-    // initialize entropy and seed random generator
-    // mbedtls_entropy_context entropy;
-    // mbedtls_ctr_drbg_context ctr_drbg; 
-
-    // mbedtls_entropy_init(&entropy);
-    // mbedtls_ctr_drbg_init(&ctr_drbg);
-    // if ((error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
-    //     printf("error at line %d: mbedtls_ctr_drbg_seed returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // // initialize TLS server parameters
-    // mbedtls_x509_crt srvcert;
-    // mbedtls_ssl_context ssl;
-    // mbedtls_ssl_config conf;
-    // mbedtls_pk_context pkey;
-    // mbedtls_timing_delay_context timer; 
-    // mbedtls_net_context listen_fd, client_fd;
-    // mbedtls_ssl_cookie_ctx cookie_ctx;
-
-    // mbedtls_net_init(&listen_fd);
-    // mbedtls_net_init(&client_fd);
-    // mbedtls_x509_crt_init(&srvcert);
-    // mbedtls_ssl_init(&ssl);
-    // mbedtls_ssl_config_init(&conf);
-    // mbedtls_pk_init(&pkey);
-    // mbedtls_ssl_cookie_init(&cookie_ctx);
-
-
-    // /*
-    // * Load the certificates and private RSA key
-    // */
-    
-    // // Initialize server with mule certificate
-    // const unsigned char *cert_data = mule_srv_crt;
-    // error_code = mbedtls_x509_crt_parse(
-    //     &srvcert,
-    //     cert_data,
-    //     mule_srv_crt_len
-    // );
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // const unsigned char *key_data = mule_srv_key;
-    // error_code = mbedtls_pk_parse_key(
-    //     &pkey,
-    //     key_data,
-    //     mule_srv_key_len, NULL, 0,
-    //     mbedtls_ctr_drbg_random, &ctr_drbg
-    // );
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-    
-    // /*
-    // * Setup SSL stuff
-    // */
-    
-    // // Setup server
-    // error_code = mbedtls_ssl_config_defaults(
-    //     &conf,
-    //     MBEDTLS_SSL_IS_SERVER,
-    //     MBEDTLS_SSL_TRANSPORT_DATAGRAM, 
-    //     MBEDTLS_SSL_PRESET_DEFAULT
-    // );
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_config_defaults returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    // //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
-    // //mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
-
-    // mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
-    // error_code = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_conf_own_cert returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-    
-    // error_code = mbedtls_ssl_setup(&ssl, &conf);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_setup returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    //waits for BLE connection to continue 
-    // while (ble_gap_conn_active() == 0) {
-    //     //wait  
-    //     printf("waiting for BLE connection\n");
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
 
     // Set bio to call ble connection
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
@@ -1083,15 +925,15 @@ void http_get_test(void) {
 }
 
 // Takes in a NULL-terminated string as a payload.
-void http_attempt_single_upload(char payload[], int payload_len) {
+void http_attempt_single_upload(uint8_t payload[], int payload_len) {
     char json_prefix[] = "{\"data\":\"";
     char json_suffix[] = "\"}";
-    char post_data[200] = {0};
+    char post_data[1200] = {0};
     int prefix_len = sizeof(json_prefix) - 1;
     int suffix_len = sizeof(json_suffix) - 1;
     int post_len = prefix_len + payload_len + suffix_len;
     
-    printf("Payload = %s\n", payload);
+    //printf("Payload = %s\n", payload);
     printf("Prefix length = %d, suffix length = %d, payload_len = %d, post_len = %d\n", prefix_len, suffix_len, payload_len, post_len);
     
     // Check to make sure the payload exists.
@@ -1128,8 +970,8 @@ void http_attempt_single_upload(char payload[], int payload_len) {
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_http_client_set_post_field(client, post_data, post_len);
     
-    printf("POST request = %s\n", post_data);
-    /*
+    //printf("POST request = %s\n", post_data);
+    
     for (int aChar = 0; aChar < post_len; aChar++) {
         if (post_data[aChar] == 0) {
             printf("NULL");
@@ -1137,7 +979,7 @@ void http_attempt_single_upload(char payload[], int payload_len) {
             printf("%c", post_data[aChar]);
         }
     } printf("\n");
-    */
+    
     
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
@@ -1174,7 +1016,7 @@ void http_attempt_single_upload(char payload[], int payload_len) {
 void http_attempt_many_uploads() { // char *payloads[], int num_payloads) { // Modified to read from a global variable.
     for (int i = 0; i < num_payloads; i++) {
         // For each pointer, we do a single POST request.
-        http_attempt_single_upload(payloads[i], payloads[i-1] - payloads[i]);
+        http_attempt_single_upload(payloads[i], payloads[i+1] - payloads[i]);
     }
 }
 
@@ -1190,6 +1032,12 @@ void http_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated http
     int token_len;
     int cur_post_length = 0;
     
+    // Check to make sure we have tokens to redeem.
+    if (num_stored_tokens <= 0) {
+        printf("You have no tokens to redeem!\n");
+        return;
+    }
+
     // Instantiate a buffer to hold our resulting data.
     char responseBuffer[20] = {0}; // I think our responses are very small, so this should fit.
     
@@ -1260,7 +1108,7 @@ void app_main() {
 
     print_chip_info();
     init_nvs();
-    init_wifi();
+    // init_wifi();
     token_starts[0] = token_buff; // initialize the token storage to start at the token buffer.
     payloads[0] = big_data; // initialize the payload storage to start at the payload buffer.
 
@@ -1313,13 +1161,9 @@ void app_main() {
     //mbedtls handshake
     mbedtls_stuff();
 
-    //set up packet pointers to beginning of big_data
-    // (moved to top of main() )
-//     for (int i = 0; i < MAX_PAYLOADS; i++) {
-//         payloads[i] = big_data;
-//     }
+    //start a timer 
 
-    while(num_payloads < 10) { // get data and send data to either server or back to sensor
+    while(num_payloads < MAX_PAYLOADS) { // get data and send data to either server or back to sensor
 
         //waits for BLE connection to continue 
         // while (ble_gap_conn_active() == 0) {
@@ -1352,6 +1196,10 @@ void app_main() {
             ble_write_long(&ble_conn_handle, metadata_state, 3);
         }
     }
+    //sanity checking data
+    // for (int i = 0; i < MAX_PAYLOADS*CHUNK_SIZE; i++) {
+    //     printf("data %x\n", big_data[i]);
+    // }
 
     //TODO: disconnect and wait to send data to server
     printf("disconnect BLE\n");
@@ -1376,6 +1224,18 @@ void app_main() {
      * Transfer all the data up to the application server.
      */
 
+    // Try to connect to WiFi.
+    while (true) {
+        esp_err_t error_code = init_wifi();
+        if (error_code == ESP_OK) {
+            break;
+        }
+        printf("Failed to connect to WiFi. Retrying...\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    // TODO: we will want to wrap this in a while-loop and keep trying
+    // after a delay if it fails.
+
     // Upload all of our data to the application servers and collect tokens :3
     http_attempt_many_uploads();
     
@@ -1387,11 +1247,11 @@ void app_main() {
 
     //TODO: clean up mbedtls stuff and restart 
     
-    // for (int i = 30; i >= 0; i--) {
-    //     printf("Restarting in %d seconds...\n", i);
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
-    // printf("Restarting now.\n");
-    // fflush(stdout);
-    // esp_restart();
+    for (int i = 30; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    printf("Restarting now.\n");
+    fflush(stdout);
+    esp_restart();
 }
