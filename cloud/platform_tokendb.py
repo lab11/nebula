@@ -1,6 +1,4 @@
 import redis
-from concurrent.futures import ProcessPoolExecutor
-from functools import partial
 
 class KeyValueDatabase:
     def __init__(self, host='localhost', port=6379, db=0):
@@ -14,8 +12,8 @@ class KeyValueDatabase:
         self.redis_client.incr(mule_id)
 
     def batch_increment_counts(self, mule_ids):
-        with ProcessPoolExecutor(max_workers=32) as executor:
-            executor.map(self.increment_count, mule_ids)
+        for mule_id in mule_ids:
+            self.increment_count(mule_id)
 
     def get_counts(self):
         counts = {}
