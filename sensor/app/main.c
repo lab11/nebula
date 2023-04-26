@@ -196,11 +196,11 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len)
 
     read_buf = buf; //set global read_buf to buf so we can access it in the callback
 
-    // Wait for metadata to signifiy we are ready to read
-    while (readiness != 0x02) {
-        printf("not ready to read\n");
-        nrf_delay_ms(500);
-    }
+    // // Wait for metadata to signifiy we are ready to read
+    // while (readiness != 0x02) {
+    //     printf("not ready to read\n");
+    //     nrf_delay_ms(500);
+    // } TODO: put this back and fix metadata state perhaps 
 
     while (metadata_state[1] < metadata_state[0]) {
         nrf_delay_ms(500);
@@ -433,8 +433,8 @@ int main(void) {
     printf("  . Seeding the random number generator...");
 
     if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                     (const unsigned char *) pers,
-                                     strlen(pers))) != 0) {
+                                     NULL,
+                                     0)) != 0) {
         printf(" failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret);
         
     }
@@ -523,124 +523,12 @@ int main(void) {
 
     printf(" ok\n");
 
-// reset:
-// #ifdef MBEDTLS_ERROR_C
-//     if (ret != 0) {
-//         char error_buf[100];
-//         mbedtls_strerror(ret, error_buf, 100);
-//         printf("Last error was: %d - %s\n\n", ret, error_buf);
-//     }
-// #endif
-
-    //mbedtls_net_free(&client_fd);
+    //reset: TODO???
 
     mbedtls_ssl_session_reset(&ssl);
 
-    //TODO: I skipped the wait until a client connects and client ID
+    //TODO: I skipped the wait until a client connects and client ID cause that's not needed
 
-
-
-    // Initilize mbedtls components
-    // mbedtls_net_context server_fd;
-    // mbedtls_ecdh_context ctx_sensor;
-    // mbedtls_entropy_context entropy;
-    // mbedtls_ctr_drbg_context ctr_drbg;
-    // mbedtls_ssl_context ssl;
-    // mbedtls_ssl_config conf;
-    // mbedtls_x509_crt clicert;
-    // mbedtls_pk_context pkey;
-    // mbedtls_timing_delay_context timer;
-
-    // size_t cli_olen;
-    // unsigned char secret_cli[32] = { 0 };
-    // //unsigned char secret_srv[32] = { 0 };
-    // unsigned char cli_to_srv[36], srv_to_cli[33];
-    // const char pers[] = "ecdh";
-
-    // // Initialize a mbedtls client
-    // //mbedtls_net_init(&server_fd); TODO this seems to only work on Windows/MAC/Linux?
-    // mbedtls_ssl_init(&ssl);
-    // mbedtls_ssl_config_init(&conf);
-    // mbedtls_x509_crt_init(&clicert);
-    // mbedtls_ctr_drbg_init(&ctr_drbg);
-    // mbedtls_pk_init(&pkey);
-
-    // Initialize the RNG and entropy source for mbedtls
-    // mbedtls_entropy_init(&entropy);
-
-    // nrf_drv_rng_config_t rng_config = NRF_DRV_RNG_DEFAULT_CONFIG;
-    // error_code = nrf_drv_rng_init(&rng_config);
-
-    // error_code = mbedtls_entropy_add_source(&entropy, entropy_source, NULL,
-    //                          MBEDTLS_ENTROPY_MAX_GATHER, MBEDTLS_ENTROPY_SOURCE_STRONG);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_entropy_add_source %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // // Seed the random number generator
-    // error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-    //                                     NULL, 0);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ctr_drbg_seed %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // //TODO: mbedtls_ssl_set_timer_cb?
-    
-    // /*
-    // * Load the certificates and private RSA key
-    // */
-    // const unsigned char *cert_data = sensor_cli_crt;
-    // error_code = mbedtls_x509_crt_parse(
-    //     &clicert,
-    //     cert_data,
-    //     sensor_cli_crt_len);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // const unsigned char *key_data = sensor_cli_key;
-    // error_code = mbedtls_pk_parse_key(
-    //     &pkey,
-    //     key_data,
-    //     mule_srv_key_len, NULL, 0);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // /*
-    // * Setup SSL stuff
-    // */
-    // error_code = mbedtls_ssl_config_defaults(
-    //     &conf,
-    //     MBEDTLS_SSL_IS_CLIENT,
-    //     MBEDTLS_SSL_TRANSPORT_DATAGRAM,
-    //     MBEDTLS_SSL_PRESET_DEFAULT
-    // );
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_config_defaults returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // mbedtls_ssl_conf_authmode( &conf, MBEDTLS_SSL_VERIFY_OPTIONAL ); //TODO change from verify optional
-    // mbedtls_ssl_conf_ca_chain( &conf, &clicert, NULL );
-    // mbedtls_ssl_conf_rng( &conf, mbedtls_ctr_drbg_random, &ctr_drbg );
-    // mbedtls_ssl_conf_read_timeout( &conf, 10000); //TODO change this to something reasonable/no magic numbers
-
-    // error_code = mbedtls_ssl_setup( &ssl, &conf);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_setup returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
-
-    // error_code = mbedtls_ssl_set_hostname( &ssl, "localhost");
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_set_hostname returned %d\n", __LINE__, error_code);
-    //     abort();
-    // }
     
     /*
     * GPIO initialization
@@ -673,7 +561,7 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
-    //printf("connected, start mbedtls handshake\n");
+    printf("BLE connected, start mbedtls handshake\n");
 
     /*
     * MBEDTLS handshake
@@ -681,29 +569,32 @@ int main(void) {
 
     
     //Set bio to call ble connection TODO: 
-    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL );
+    //mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL );
 
-    //(void *ctx, const unsigned char *buf, size_t len)
-    //ble_write(ble_conn_handle, buf, len);
+    // // handshake
+    // ret = mbedtls_ssl_handshake(&ssl);
+    // // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
+    // //         ret == MBEDTLS_ERR_SSL_WANT_WRITE );
 
-    // handshake
-    ret = mbedtls_ssl_handshake(&ssl);
-    // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
-    //         ret == MBEDTLS_ERR_SSL_WANT_WRITE );
+    // if( ret != 0 )
+    // {
+    //     mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
+    //     char error_buf[100];
+    //     mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+    //     printf("SSL/TLS handshake error: %s\n", error_buf);
+    //     //abort();
+    // }
+    // else {
+    //     printf("mbedtls handshake successful\n");
+    // }
 
-    if( ret != 0 )
-    {
-        mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
-        abort();
-    }
-    else {
-        printf("mbedtls handshake successful\n");
-    }
+
+    //TODO: actually send data over mbedtls
 
     //stop ourselves from continuing on 
-    while(true) {
-        nrf_delay_ms(1000);
-    }
+    // while(true) {
+    //     nrf_delay_ms(1000);
+    // }
 
     //Read and write test
     //data_test(ble_conn_handle);

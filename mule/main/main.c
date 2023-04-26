@@ -70,6 +70,9 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 
 #define CHUNK_SIZE 200
 #define MAX_PAYLOADS 10
+#define READ_TIMEOUT_MS 1000
+#define MAX_RETRY       5
+#define SERVER_NAME "SENSOR_LAB11"
 
 uint8_t sensor_state [CHUNK_SIZE];
 uint8_t sensor_state_data [1500]; // for storing the data 
@@ -728,119 +731,220 @@ static void ble_on_sync(void) {
 
 }
 
+
 void mbedtls_stuff() {
-    printf("Starting the mbedtls server\n");
-    int error_code;
+    printf("Starting the mbedtls client stuff\n");
+
+    int ret, len;
+    //mbedtls_net_context server_fd;
+    uint32_t flags;
+    unsigned char buf[1024];
+    const char *pers = "dtls_client";
+    int retry_left = MAX_RETRY;
+
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    //mbedtls_x509_crt cacert;
+    mbedtls_timing_delay_context timer;
+
+//     ((void) argc);
+//     ((void) argv);
+
+// #if defined(MBEDTLS_DEBUG_C)
+//     mbedtls_debug_set_threshold(DEBUG_LEVEL);
+// #endif
+
+    /*
+     * 0. Initialize the RNG and the session data
+     */
+    //mbedtls_net_init(&server_fd);
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    //mbedtls_x509_crt_init(&cacert);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+
+    mbedtls_printf("\n  . Seeding the random number generator...");
+    
+
+    mbedtls_entropy_init(&entropy);
+    if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                     NULL,
+                                     0)) != 0) {
+        mbedtls_printf(" failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret);
+        
+    }
+
+    mbedtls_printf(" ok\n");
+
+    //skip cert load and net connect stuff
+
+    mbedtls_printf("  . Setting up the DTLS structure...");
+    
+
+    if ((ret = mbedtls_ssl_config_defaults(&conf,
+                                           MBEDTLS_SSL_IS_CLIENT,
+                                           MBEDTLS_SSL_TRANSPORT_DATAGRAM,
+                                           MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
+        mbedtls_printf(" failed\n  ! mbedtls_ssl_config_defaults returned %d\n\n", ret);
+        
+    }
+
+    /* OPTIONAL is usually a bad choice for security, but makes interop easier
+     * in this simplified example, in which the ca chain is hardcoded.
+     * Production code should set a proper ca chain and use REQUIRED. */
+    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    //mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
+    mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+    mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
+
+    if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
+        mbedtls_printf(" failed\n  ! mbedtls_ssl_setup returned %d\n\n", ret);
+        
+    }
+
+    if ((ret = mbedtls_ssl_set_hostname(&ssl, SERVER_NAME)) != 0) {
+        mbedtls_printf(" failed\n  ! mbedtls_ssl_set_hostname returned %d\n\n", ret);
+        
+    }
+
+    // mbedtls_ssl_set_bio(&ssl, &server_fd,
+    //                     mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
+
+    // mbedtls_ssl_set_timer_cb(&ssl, &timer, mbedtls_timing_set_delay,
+    //                          mbedtls_timing_get_delay);
+
+    // mbedtls_printf(" ok\n");
+
+
+
+    //int error_code;
 
     /*
     * Initialize the RNG and the session data
     */
 
     // initialize entropy and seed random generator
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg; 
+    // mbedtls_entropy_context entropy;
+    // mbedtls_ctr_drbg_context ctr_drbg; 
 
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    if ((error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
-        printf("error at line %d: mbedtls_ctr_drbg_seed returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // mbedtls_entropy_init(&entropy);
+    // mbedtls_ctr_drbg_init(&ctr_drbg);
+    // if ((error_code = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
+    //     printf("error at line %d: mbedtls_ctr_drbg_seed returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    // initialize TLS server parameters
-    mbedtls_x509_crt srvcert;
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_pk_context pkey;
-    mbedtls_timing_delay_context timer; 
-    mbedtls_net_context listen_fd, client_fd;
-    mbedtls_ssl_cookie_ctx cookie_ctx;
+    // // initialize TLS server parameters
+    // mbedtls_x509_crt srvcert;
+    // mbedtls_ssl_context ssl;
+    // mbedtls_ssl_config conf;
+    // mbedtls_pk_context pkey;
+    // mbedtls_timing_delay_context timer; 
+    // mbedtls_net_context listen_fd, client_fd;
+    // mbedtls_ssl_cookie_ctx cookie_ctx;
 
-    mbedtls_net_init(&listen_fd);
-    mbedtls_net_init(&client_fd);
-    mbedtls_x509_crt_init(&srvcert);
-    mbedtls_ssl_init(&ssl);
-    mbedtls_ssl_config_init(&conf);
-    mbedtls_pk_init(&pkey);
-    mbedtls_ssl_cookie_init(&cookie_ctx);
+    // mbedtls_net_init(&listen_fd);
+    // mbedtls_net_init(&client_fd);
+    // mbedtls_x509_crt_init(&srvcert);
+    // mbedtls_ssl_init(&ssl);
+    // mbedtls_ssl_config_init(&conf);
+    // mbedtls_pk_init(&pkey);
+    // mbedtls_ssl_cookie_init(&cookie_ctx);
 
 
-    /*
-    * Load the certificates and private RSA key
-    */
+    // /*
+    // * Load the certificates and private RSA key
+    // */
     
-    // Initialize server with mule certificate
-    const unsigned char *cert_data = mule_srv_crt;
-    error_code = mbedtls_x509_crt_parse(
-        &srvcert,
-        cert_data,
-        mule_srv_crt_len
-    );
-    if (error_code) {
-        printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // // Initialize server with mule certificate
+    // const unsigned char *cert_data = mule_srv_crt;
+    // error_code = mbedtls_x509_crt_parse(
+    //     &srvcert,
+    //     cert_data,
+    //     mule_srv_crt_len
+    // );
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_x509_crt_parse returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    const unsigned char *key_data = mule_srv_key;
-    error_code = mbedtls_pk_parse_key(
-        &pkey,
-        key_data,
-        mule_srv_key_len, NULL, 0,
-        mbedtls_ctr_drbg_random, &ctr_drbg
-    );
-    if (error_code) {
-        printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // const unsigned char *key_data = mule_srv_key;
+    // error_code = mbedtls_pk_parse_key(
+    //     &pkey,
+    //     key_data,
+    //     mule_srv_key_len, NULL, 0,
+    //     mbedtls_ctr_drbg_random, &ctr_drbg
+    // );
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_pk_parse_key returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
     
-    /*
-    * Setup SSL stuff
-    */
+    // /*
+    // * Setup SSL stuff
+    // */
     
-    // Setup server
-    error_code = mbedtls_ssl_config_defaults(
-        &conf,
-        MBEDTLS_SSL_IS_SERVER,
-        MBEDTLS_SSL_TRANSPORT_DATAGRAM, 
-        MBEDTLS_SSL_PRESET_DEFAULT
-    );
-    if (error_code) {
-        printf("error at line %d: mbedtls_ssl_config_defaults returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // // Setup server
+    // error_code = mbedtls_ssl_config_defaults(
+    //     &conf,
+    //     MBEDTLS_SSL_IS_SERVER,
+    //     MBEDTLS_SSL_TRANSPORT_DATAGRAM, 
+    //     MBEDTLS_SSL_PRESET_DEFAULT
+    // );
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ssl_config_defaults returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
-    mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
-    //mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
+    // mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    // //mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+    // //mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
 
-    mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
-    error_code = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
-    if (error_code) {
-        printf("error at line %d: mbedtls_ssl_conf_own_cert returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
+    // error_code = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ssl_conf_own_cert returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
     
-    error_code = mbedtls_ssl_setup(&ssl, &conf);
-    if (error_code) {
-        printf("error at line %d: mbedtls_ssl_setup returned %d\n", __LINE__, error_code);
-        abort();
-    }
+    // error_code = mbedtls_ssl_setup(&ssl, &conf);
+    // if (error_code) {
+    //     printf("error at line %d: mbedtls_ssl_setup returned %d\n", __LINE__, error_code);
+    //     abort();
+    // }
 
     //waits for BLE connection to continue 
-    while (ble_gap_conn_active() == 0) {
-        //wait  
-        printf("waiting for BLE connection\n");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    // while (ble_gap_conn_active() == 0) {
+    //     //wait  
+    //     printf("waiting for BLE connection\n");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
 
     // Set bio to call ble connection
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
+    mbedtls_ssl_set_timer_cb(&ssl, &timer, mbedtls_timing_set_delay,
+                              mbedtls_timing_get_delay);
+
     // //Handshake 
-    // error_code = mbedtls_ssl_handshake(&ssl);
-    // if (error_code) {
-    //     printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, error_code);
-    //     abort();
+    // ret = mbedtls_ssl_handshake(&ssl);
+    // if (ret != 0) {
+    //     printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, ret);
+    //     char error_buf[100];
+    //     mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+    //     printf("SSL/TLS handshake error: %s\n", error_buf);
+    //      //abort();
+    // }
+    // else {
+    //     printf("mbedtls handshake successful\n");
+    // }
+
+    // while(true) {
+    //     //wait for data
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
     // }
 
     // mbedtls_ssl_session_reset(&ssl);
@@ -936,6 +1040,9 @@ void app_main() {
     nimble_port_freertos_init(mule_host_task);
     
     printf("started connection\n");
+
+    //mbedtls handshake
+    mbedtls_stuff();
 
     //set up packet pointers to beginning of big_data
     for (int i = 0; i < MAX_PAYLOADS; i++) {
