@@ -1,8 +1,21 @@
 # Galaxy Cloud - Provider and Application Servers
 
 ## DAtabases on the Provider
-* provider-db.py runs a database with schema {mule_id, count}
-* platform-token.db maintains a set of tokens.  
+* provider_db.py runs a database with schema {mule_id, count}
+* platform_tokendb.py maintains a set of tokens.  
+
+We now use REDIS for platform_tokendb.py. 
+
+Install REDIS
+
+```bash
+curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+
+sudo apt-get update
+sudo apt-get install redis
+```
 
 ## AES
 * pip install cryptography

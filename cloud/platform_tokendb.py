@@ -1,24 +1,35 @@
-DEBUG = False
+import redis
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
-class StringSet:
-    def __init__(self):
-        self.strings = set()
+class KeyValueDatabase:
+    def __init__(self, host='localhost', port=6379, db=0):
+        self.redis_client = redis.StrictRedis(host=host, port=port, db=db)
 
-    def add_new_elements(self, new_strings):
-        initial_size = len(self.strings)
-        self.strings.update(new_strings)
-        final_size = len(self.strings)
-        return final_size - initial_size
+        # Initialize the database and set counts to 0
+        for key in self.redis_client.scan_iter('*'):
+            self.redis_client.set(key, 0)
 
-if DEBUG:
+    def increment_count(self, mule_id):
+        self.redis_client.incr(mule_id)
 
-    string_set = StringSet()
+    def batch_increment_counts(self, mule_ids):
+        with ProcessPoolExecutor(max_workers=32) as executor:
+            executor.map(self.increment_count, mule_ids)
 
-    # Add new strings to the set and print the number of new elements added
-    new_strings = ['hello', 'world', 'foo', 'bar']
-    print(string_set.add_new_elements(new_strings))  # Output: 4
+    def get_counts(self):
+        counts = {}
+        for key in self.redis_client.scan_iter('*'):
+            counts[key.decode()] = int(self.redis_client.get(key))
+        return counts
 
-    # Add some new strings and some existing strings
-    new_strings = ['hello', 'world', 'python', 'example']
-    print(string_set.add_new_elements(new_strings))  # Output: 2
+if __name__ == '__main__':
+    db = KeyValueDatabase()
+
+    # Increment counts for mule_ids
+    mule_ids = ['mule_1', 'mule_2', 'mule_3']
+    db.batch_increment_counts(mule_ids)
+
+    # Retrieve the current counts
+    print(db.get_counts())
 
