@@ -39,6 +39,7 @@ async def make_threaded_call(request: Request, fn, should_be_provider: bool):
         body_json = await request.json()
     except Exception as e:
         print("Error parsing body: {}".format(e))
+        #print(request.text())
 
     def call_function_threaded():
         print("Calling function {} with params {} and body {}".format(fn, params, body_json))

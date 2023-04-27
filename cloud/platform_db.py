@@ -9,7 +9,7 @@ class KeyValueDatabase:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_name) as conn:
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             conn.execute('''CREATE TABLE IF NOT EXISTS mules (
                                 mule_id TEXT PRIMARY KEY,
                                 count INTEGER NOT NULL
@@ -17,7 +17,7 @@ class KeyValueDatabase:
             conn.commit()
 
     def increment_count(self, mule_id, increment):
-        with sqlite3.connect(self.db_name) as conn:
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             conn.execute('''INSERT OR IGNORE INTO mules (mule_id, count)
                             VALUES (?, 0)''', (mule_id,))
             conn.execute('''UPDATE mules
@@ -30,7 +30,7 @@ class KeyValueDatabase:
             executor.map(lambda x: self.increment_count(x[0], x[1]), mule_id_increments)
 
     def get_counts(self):
-        with sqlite3.connect(self.db_name) as conn:
+        with sqlite3.connect(self.db_name, check_same_thread=False) as conn:
             cursor = conn.execute('''SELECT mule_id, count
                                      FROM mules''')
             return {row[0]: row[1] for row in cursor}

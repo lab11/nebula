@@ -2,4 +2,3 @@ fastapi
 maturin
 requests
 uvicorn
-

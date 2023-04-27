@@ -5,7 +5,7 @@ DEBUG = True
 
 class StringSet:
     def __init__(self):
-        self.conn = sqlite3.connect("strings.db")
+        self.conn = sqlite3.connect("strings.db", check_same_thread=False)
         self.lock = threading.Lock()
         self._create_table()
 

@@ -36,8 +36,8 @@ ENV SERVER_MODE=provider
 
 # Start the Uvicorn server with the specified server mode
 CMD if [ "$SERVER_MODE" = "provider" ] ; then \
-        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 4; \
+        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 1; \
     else \
-        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 4; \
+        uvicorn main:app --host 0.0.0.0 --port $SERVER_PORT --workers 1; \
     fi
 
