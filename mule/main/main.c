@@ -75,12 +75,10 @@ static const ble_uuid_t *mule_chr_uuid = BLE_UUID128_DECLARE(
 #define READ_TIMEOUT_MS 1000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11" // TODO??
+#define READ_BUF_SIZE 1024
 
-uint8_t sensor_state [CHUNK_SIZE+3];
-uint8_t mule_state [CHUNK_SIZE+3];
+
 uint8_t sensor_state_data [1500]; // for storing the data 
-//uint8_t sensor_state_str [1500]; //for storing the certs 
-//uint8_t metadata_state [3];
 
 // A big buffer and pointer array to hold our payloads :3
 int num_payloads = 0;
@@ -107,10 +105,31 @@ void mbedtls_stuff();
 static int num_stored_tokens = 0;
 static char token_buff[1000] = {0}; // each token is 88 bytes
 static char *token_starts[12]; // we can store up to 11 tokens
-char data_buf [1000];
+//char data_buf [1000];
 
 //pointer to read buffer
-uint8_t *read_buf;
+uint8_t *read_buf = NULL;
+
+
+// Header struct 
+struct ble_header {
+    uint8_t type;
+    uint8_t chunk;
+    uint8_t len;
+    uint8_t total_chunks; 
+};
+
+uint8_t sensor_state [CHUNK_SIZE+sizeof(struct ble_header)];
+uint8_t mule_state [CHUNK_SIZE+sizeof(struct ble_header)];
+
+//Global Sensor State
+uint8_t data_buf[READ_BUF_SIZE];
+uint32_t data_buf_len = 0;
+uint8_t data_buf_num_chunks = 0;
+uint8_t trx_state = 0;  // 0-listening,1-writing,2-recieving
+
+uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
+
 
 /*
 * App call back for read of characteristic has completed
@@ -125,16 +144,18 @@ static int ble_on_read(uint16_t conn_handle, const struct ble_gatt_error *error,
     }
     MODLOG_DFLT(INFO, "\n");
 
-    // put data into buffer depending on which characteristic was read
-    if (attr->handle == mule_attr_handle) {
-        printf("Metadata recieved!\n");
-        memcpy(mule_state, attr->om->om_data, attr->om->om_len);
-        //sema_metadata = 1;
-    } else if (attr->handle == sensor_attr_handle) {
-        printf("Data recieved!\n");
-        memcpy(sensor_state, attr->om->om_data, attr->om->om_len);
-        //sema_data = 1;
-    }
+    // // put data into buffer depending on which characteristic was read
+    // if (attr->handle == mule_attr_handle) {
+    //     printf("Metadata recieved!\n");
+    //     memcpy(mule_state, attr->om->om_data, attr->om->om_len);
+    //     //sema_metadata = 1;
+    // } else if (attr->handle == sensor_attr_handle) {
+    //     printf("Data recieved!\n");
+    //     memcpy(sensor_state, attr->om->om_data, attr->om->om_len);
+    //     //sema_data = 1;
+    // }
+
+    //THIS SHOULD NEVER HAPPEN SINCE READS ARE ALL NOTIFY_RX evt 
 
     return 0; //TODO: should it sometimes return an error?
 }
@@ -175,7 +196,7 @@ static int ble_on_subscribe_meta(uint16_t conn_handle, const struct ble_gatt_err
     MODLOG_DFLT(INFO, "Subscribe meta complete; status=%d conn_handle=%d attr_handle=%d\n",
                 error->status, conn_handle, attr->handle);
     return 0;
-}
+} //TODO: probably remove this function
 
 static void ble_read(const struct peer *peer, struct peer_chr *chr) {   
     int rc;
@@ -245,7 +266,7 @@ static void ble_subscribe(const struct peer *peer) {
     }
 
     // printf("subscribing to metadata\n");
-    //delay 1 second
+    //delay 1 second TODO remove this...
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     //value_meta[0] = 1;
@@ -270,21 +291,39 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
     //const struct peer_chr *chr_data = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
 
-    //check if writable state TODO
-    while (sensor_state[0] != 0x00) {
-        printf("Sensor is writing wait our turn.\n");
+    // //check if writable state TODO
+    // while (sensor_state[0] != 0x00) {
+    //     printf("Sensor is writing wait our turn.\n");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+
+    int error_code = 0;
+    int original_len = len;
+
+    //check we're in a connection 
+    while (connected == 0) {
+        printf("waiting for connection\n");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
+    //sanity check we are in listening state 
+    while (trx_state != 0) {
+        printf("we are recieving data, wait before writing\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    //set to writing state and set chunks to 0
+    trx_state = 1;
+    chunk_ack = 0;
+
     int num_packets = ceil(len/(float)CHUNK_SIZE);
     char local_buf[CHUNK_SIZE+3];
-    int original_len = len;
 
     for (int i = 0; i < num_packets; i++) {
-        //make and copy header into local buffer
-        local_buf[0] = num_packets; //total to send
-        local_buf[1] = i + 1; //number sent 
-        local_buf[2] = 0x00; // extra for whatever we want
+        // //make and copy header into local buffer
+        // local_buf[0] = num_packets; //total to send
+        // local_buf[1] = i + 1; //number sent 
+        // local_buf[2] = 0x00; // extra for whatever we want
         int len_for_write = 0;
 
         // we have one left to go! 
@@ -303,133 +342,62 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
             len_for_write = CHUNK_SIZE;
         }
 
+        //set up header
+        struct ble_header *header = (struct ble_header *) local_buf;
+        header->type = 0x00;
+        header->chunk = i;
+        header->len = len_for_write;
+        header->total_chunks = num_packets;
+
         //copy data into local buffer
-        memcpy(&local_buf[3], &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
-        
-        // //print data we are writing 
-        // for (int j = 0; j < 1000; j++) {
-        //     printf("buf[%d] = %x\n", j, data_buf[j]);
-        // }
+        memcpy(local_buf + sizeof(struct ble_header), &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
 
         //write data over ble and decrement the len 
-        ble_write(peer, (char *)local_buf, chr_mule, len_for_write+3);
+        ble_write(peer, (char *)local_buf, chr_mule, len_for_write+sizeof(struct ble_header));
         len -= len_for_write;
 
         //wait for ack saying number of packets recieved is same as sent
-        while (sensor_state[1] != i+1) {
+        while (chunk_ack != i+1) {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
-            printf("waiting for ack from sensor\n");
+            printf("waiting for ack from mule\n");
         }
 
     }
 
-    // //Send data packets in chunks
-    // int counter = 0; 
-    // int num_sent_packets = 0; 
-    // while (len >= CHUNK_SIZE) {
-    //     int temp = counter + CHUNK_SIZE;
-    //     ble_write(peer, &buf[counter], chr_data, CHUNK_SIZE);
-        
-        //test write
-        //uint8_t test_data[2] = {0x01, 0x02};
-        //ble_write(peer, (char *)test_data, chr_data, 2);
-        //test write done
-        // len = len - CHUNK_SIZE;
-        // counter = counter + CHUNK_SIZE;
-        // num_sent_packets += 1;
+    //send fine to sensor
+    struct ble_header *fin_header = (struct ble_header *) local_buf;
+    fin_header->type = 0x02;
+    fin_header->chunk = 0x00;
+    fin_header->len = 0x00;
+    fin_header->total_chunks = 0x00;
+    ble_write(peer, (char *)local_buf, chr_mule, 3);
 
-        //wait for ack to send next packet 
-    //     while (metadata_state[1] != num_sent_packets) {
-    //         printf("waiting for ack\n");
-    //         printf("metadata state[0]: %d\n", metadata_state[0]);
-    //         printf("metadata state[1]: %d\n", metadata_state[1]);
-    //         printf("metadata state[2]: %d\n", metadata_state[2]);
-    //         printf("num sent packets: %d\n", num_sent_packets);
-    //         // delay 1 second
-    //         vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //     }
-
-    //     printf("metadata state: %d\n", metadata_state[1]);
-
-    // }
-
-    //write complete put back in listening mode
-    mule_state[0] = 0x00;
-    mule_state[1] = 0x00;
-    mule_state[2] = 0x00;
-    ble_write(peer, (char *)mule_state, chr_mule, 3);
+    //write is done, reset to listening 
+    trx_state = 0;
 
     return original_len;
 }
 
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
-    // //wait for connection to be established TODO??
-    // while (ble_gap_conn_active() == 0) {
-    //     //wait  
-    //     printf("waiting for BLE connection\n");
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
 
-    //get peer from connection handle and peer chrs from uuids 
-    const struct peer *peer = peer_find(ble_conn_handle);
-    const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
-    const struct peer_chr *chr_data = peer_chr_find_uuid(peer, sensor_svc_uuid, sensor_chr_uuid);
-
-    read_buf = buf;
-
-    printf("trying to read\n");
-    printf("sensor_state[0]: %d\n", sensor_state[0]);
-    printf("sensor_state[1]: %d\n", sensor_state[1]);
-    printf("sensor_state[2]: %d\n", sensor_state[2]);
-
-    while (sensor_state[1] < sensor_state[0]) {
-        //delay
+    while (data_buf_len < len) {
+        printf("not enough data in buffer... wait\n");
+        printf("data_buf_len: %ld\n", data_buf_len);
+        printf("len: %d\n", len);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        printf("waiting for more packets\n");
-        printf("sensor_state[0]: %d\n", sensor_state[0]);
-        printf("sensor_state[1]: %d\n", sensor_state[1]);
     }
+    
+    // now we have enough data in theory 
+    memcpy(buf, data_buf, len);
 
-    read_buf = NULL;
-    return len;
+    //clear data_buf state 
+    data_buf_len = 0;
+    data_buf_num_chunks = 0;
+
+    return len;    
 
 }
-
-    // call ble_read to get metadata 
-    //ble_read(peer, chr_metadata);
-    // while (sema_metadata == 0) {
-    //     //wait for callback to finish
-    // }
-    //now the read data is in metadata_state
-    //int num_chunks = mule_state[0]; 
-    //int num_recieved_chunks = metadata_state[1];
-
-    //set the sema back to 0 since we are done with the metadata for now
-    //sema_metadata = 0;
-
-    // while (num_recieved_chunks < num_chunks) {
-    //     //call ble_read to get the next data chunk 
-    //     ble_read(peer, chr_data);
-    //     while (sema_data == 0) {
-    //         //wait for callback to finish
-    //     }
-    //     //now the read data is in sensor_state 
-    //     memcpy(&buf[num_recieved_chunks*CHUNK_SIZE], sensor_state, CHUNK_SIZE);
-    //     //set the sema back to 0 since we are done copying data 
-    //     sema_data = 0;
-    // }
-
-    //recieve the leftover data 
-    // ble_read(peer, chr_data);
-    // while (sema_data == 0) {
-    //     //wait for callback to finish
-    //}
-    //now the read data is in sensor_state
-    //memcpy(&buf[num_recieved_chunks*CHUNK_SIZE], sensor_state, len - num_recieved_chunks*CHUNK_SIZE);
-
-    //return len;
-//}
 
 
 /**
@@ -691,7 +659,7 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                     OS_MBUF_PKTLEN(event->notify_rx.om));
         
 
-        char local_buf[CHUNK_SIZE+3];
+        char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
  
         //if write is to mule characteristic, shouldn't happen do nothing
         if (event->notify_rx.attr_handle == mule_attr_handle -1 ) { //literally no clue why -1
@@ -709,50 +677,80 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
             //copy recieved data into local buffer
             os_mbuf_copydata(event->notify_rx.om,0,OS_MBUF_PKTLEN(event->notify_rx.om),local_buf);
 
-            //Check header to see where to store data 
-            if (local_buf[0] == 0x00) {
-                printf("Sensor is done sending\n");
-                //copy header into sensor state 
-                memcpy(sensor_state,local_buf,3);
+            //Check header to see where to store data
+            struct ble_header *header = (struct ble_header *) local_buf;
+
+            printf("Header type: %d\n", header->type);
+            printf("Header chunk: %d\n", header->chunk);
+            printf("Header len: %d\n", header->len);
+            printf("Header total: %d\n", header->total_chunks);
+
+            //Get peer and char 
+            const struct peer *peer = peer_find(ble_conn_handle);
+            const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
+
+            if (header->type == 0x00) { // sensor is sending payload
+                //check if we were writing (bad times)
+                if (trx_state == 1) {
+                    printf("Mule is sending a payload while we are writing\n");
+                    return -1;
+                }
+
+                //check we're ready to get more data 
+                if (trx_state == 0 && data_buf_len != 0) {
+                    printf("Mule is trying to send a new payload while our data buffer has content\n");
+                    return -1;
+                }
+                
+                //sanity check on chunk number
+                if (header->chunk != data_buf_num_chunks) {
+                    printf("Mule is sending a payload with the wrong chunk number\n");
+                    return -1;
+                }
+                
+                trx_state = 2; // switch to recieving state
+                // recieve payload 
+                memcpy(&data_buf[data_buf_len], local_buf+sizeof(struct ble_header), header->len);
+                //update data_buf_len
+                data_buf_len += header->len;
+                printf("data_buf_len before ack now %ld\n", data_buf_len);
+                data_buf_num_chunks += 1;
+
+                //send ack 
+                printf("Sending ack for chunk %d\n", header->chunk);
+                struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
+                ble_write(peer, (char *)&ack_header, chr_mule, sizeof(struct ble_header));
             }
-            else if (local_buf[0] == 0xff) {
-                printf("Sensor is acking a packet\n");
-                //copy header into sensor state 
-                memcpy(sensor_state,local_buf,3);               
+            else if (header->type == 0x01) { //sensor is sending ack
+                //check if we were listening (bad times)
+                if (trx_state == 0) {
+                    printf("Sensor is sending an ack while we are listening\n");
+                    return -1;
+                }
+
+                //check if we were recieving (bad times)
+                if (trx_state == 2) {
+                    printf("Sensor is sending an ack while we are recieving data\n");
+                    return -1;
+                }
+
+                //recieving an ack! 
+
+                //check if ack is for the right chunk
+                if (header->chunk != chunk_ack) {
+                    printf("Sensor is sending an ack for the wrong chunk\n");
+                    return -1;
+                }
+                else { //chunk is the right chunk
+                    chunk_ack += 1;
+                }            
             }
-            else {
-                printf("Sensor is writing packets\n");
-                //print the data 
-                print_mbuf(event->notify_rx.om);
-
-                // check header to see where to write data 
-                int num_chunks = local_buf[0];
-                int num_recieved_chunks = local_buf[1];
-
-                printf("num_recieved_chunks: %d\n",num_recieved_chunks);
-                printf("num_chunks: %d\n",num_chunks);
-
-                //copy header data into sensor state
-                memcpy(sensor_state,local_buf,3);
-                //copy data into read buffer
-                //print local buf
-                // for (int i = 0; i < CHUNK_SIZE+3; i++) {
-                //     printf("local buf%x ",local_buf[i]);
-                // }
-                memcpy(&data_buf[(num_recieved_chunks-1)*CHUNK_SIZE],&local_buf[3],OS_MBUF_PKTLEN(event->notify_rx.om));
-                // for (int i = num_recieved_chunks; i < CHUNK_SIZE + num_recieved_chunks; i++) {
-                //     printf("data buf%x ",data_buf[(num_recieved_chunks-1)*CHUNK_SIZE+i]);
-                // }
-
-                //send ack back to sensor
-                local_buf[0] = 0xff; //ack header
-                local_buf[1] = num_recieved_chunks;
-                local_buf[2] = 0x00;
-
-                const struct peer *peer = peer_find(ble_conn_handle);
-                const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
-                ble_write(peer, (char *)local_buf, chr_mule, 3);
+            else if (header->type == 0x02) { // sensor is sending a fin
+                // we're done go back to listening
+                printf("Sensor is sending a fin\n");
+                trx_state = 0;
             }
+            
 
         }
         else {
@@ -866,10 +864,7 @@ void mbedtls_stuff() {
                               mbedtls_timing_get_delay);
 
 
-    //don't handshake while ble unconnected
-
-
-
+    //TODO don't handshake while ble unconnected
 
     //Handshake 
     ret = mbedtls_ssl_handshake(&ssl);
@@ -1284,37 +1279,10 @@ void app_main() {
 
    
     int len;
-    sensor_state[0] = 0xff; // start in sensor ack mode.. as if sensor acked
-    len = ble_read_long(&ble_conn_handle, (unsigned char *)data_buf, 1000);
-    len = ble_write_long(&ble_conn_handle, (unsigned char *)data_buf, 1000);
-
-    // //write and read test 
-    // printf("read and write data testing\n");
-    // int error_code;
-    // uint8_t data_buf [1000];
-    // uint8_t data_back [1000];
-    // //chill state to start with
-    // metadata_state[0] = 0x00;
-    // metadata_state[1] = 0x00;
-    // metadata_state[2] = 0x00; 
-
-    // //make random data 1kB
-    // for (int i = 0; i < 1000; i++) {
-    //     data_buf[i] = 0x01; // rand() % 256;
-    // }
-    // //printf("data_back address: %d\n", data_back);
-    // error_code = ble_write_long(&ble_conn_handle, (unsigned char *)data_buf, 1000);
-    // error_code = ble_read_long(&ble_conn_handle, (unsigned char *)data_back, 1000);
-
-    // printf("data sent and received, checking for errors\n");
-    // for (int i = 0; i < 1000; i++) {
-    //     if (data_buf[i] != data_back[i]) {
-    //         printf("error\n");
-    //         //printf("data_buf[%d] = %d\n", i, data_buf[i]);
-    //         //printf("data_back[%d] = %d\n", i, data_back[i]);
-    //         continue;
-    //     }
-    // }
+    uint8_t test_buf[1000];
+    //sensor_state[0] = 0xff; // start in sensor ack mode.. as if sensor acked
+    len = ble_read_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
+    len = ble_write_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
     
     //mbedtls handshake
     //mbedtls_stuff();
