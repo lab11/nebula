@@ -13,3 +13,6 @@
 [submodule "ext/anonymous-tokens"]
 	path = ext/anonymous-tokens
 	url = git@github.com:jlwatson/anonymous-tokens
+[submodule "ext/base64"]
+	path = ext/base64
+	url = https://github.com/rafagafe/base64

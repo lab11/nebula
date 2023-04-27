@@ -42,6 +42,7 @@
 
 #include "backhaul.h"
 #include "util.h"
+#include "base64.h"
 
 struct ble_hs_adv_fields;
 struct ble_gap_conn_desc;
@@ -195,7 +196,7 @@ static void ble_write(const struct peer *peer, uint8_t *buf, const struct peer_c
     //const struct peer_chr *chr;
     int rc;
 
-    printf('in ble_write\n');
+    printf("in ble_write\n");
 
     /* Write the characteristic. */
     rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
@@ -924,6 +925,18 @@ void http_get_test(void) {
     esp_http_client_cleanup(client);
 }
 
+void encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_len) {
+
+    // First, verify that the output has enough space
+    if (dest_len < ceil(src_len / 3.0) * 4) {
+        printf("ERROR: Output buffer is too small to encode %d bytes to base64\n", src_len);
+        return;
+    }
+
+    // Now, encode the bytes
+    bintob64(dest, src, src_len);
+}
+
 // Takes in a NULL-terminated string as a payload.
 void http_attempt_single_upload(uint8_t payload[], int payload_len) {
     char json_prefix[] = "{\"data\":\"";
@@ -963,7 +976,7 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
 
     // POST
     memcpy(post_data, json_prefix, prefix_len);
-    memcpy(post_data + prefix_len, payload, payload_len);
+    encode_bytes_to_base64(post_data + prefix_len, payload, payload_len, sizeof(post_data) - prefix_len);
     memcpy(post_data + prefix_len + payload_len, json_suffix, suffix_len);
     
     esp_http_client_set_method(client, HTTP_METHOD_POST);
