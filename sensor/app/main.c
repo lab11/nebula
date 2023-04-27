@@ -42,6 +42,7 @@
 #define CHUNK_SIZE 200
 #define READ_TIMEOUT_MS 10000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
+#define DEBUG_LEVEL 0
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -214,6 +215,8 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
 {
+    printf("sensor called ble write long\n");
+
     int error_code = 0;
     int original_len = len;
 
@@ -307,8 +310,12 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
+    printf("sensor called ble read long\n");
+
     while (data_buf_len < len) {
         printf("not enough data in buffer... wait\n");
+        printf("data_buf_len: %ld\n", data_buf_len);
+        printf("read long len: %d\n", len);
         nrf_delay_ms(1000);
     }
     
@@ -421,6 +428,16 @@ void data_test(uint16_t ble_conn_handle) {
             continue;
         }
     }
+}
+
+static void my_debug(void *ctx, int level,
+                     const char *file, int line,
+                     const char *str)
+{
+    ((void) level);
+
+    mbedtls_fprintf((FILE *) ctx, "%s:%04d: %s", file, line, str);
+    fflush((FILE *) ctx);
 }
 
 //dTLS timer functions 
@@ -595,6 +612,11 @@ int main(void) {
         
     }
 
+    //setup debug
+    
+    mbedtls_debug_set_threshold(DEBUG_LEVEL);
+    mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
     mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
@@ -662,7 +684,7 @@ int main(void) {
     //printf("BLE connected, start mbedtls handshake\n");
 
     //Read and write test
-    data_test(ble_conn_handle);
+    //data_test(ble_conn_handle);
     //read test 
 
     /*
@@ -670,30 +692,30 @@ int main(void) {
     */
 ////////////////////////////////////////////////////////////////////////////////////////
     
-    // //Set bio to call ble connection TODO: 
-    // mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL );
+    //Set bio to call ble connection TODO: 
+    mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
-    // // handshake
-    // ret = mbedtls_ssl_handshake(&ssl);
-    // while (ret != 0) {
-    //     //try again  
-    //     nrf_delay_ms(5000);
-    //     ret = mbedtls_ssl_handshake(&ssl);
-    // }
-    // // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
-    // //          ret == MBEDTLS_ERR_SSL_WANT_WRITE );
+    // handshake
+    ret = mbedtls_ssl_handshake(&ssl);
+    while (ret != 0) {
+        //try again  
+        nrf_delay_ms(5000);
+        ret = mbedtls_ssl_handshake(&ssl);
+    }
+    // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
+    //          ret == MBEDTLS_ERR_SSL_WANT_WRITE );
 
-    // if( ret != 0 )
-    // {
-    //     mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
-    //     char error_buf[100];
-    //     mbedtls_strerror(ret, error_buf, sizeof(error_buf));
-    //     printf("SSL/TLS handshake error: %s\n", error_buf);
-    //     //abort();
-    // }
-    // else {
-    //     printf("mbedtls handshake successful\n");
-    // }
+    if( ret != 0 )
+    {
+        mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
+        char error_buf[100];
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        printf("SSL/TLS handshake error: %s\n", error_buf);
+        //abort();
+    }
+    else {
+        printf("mbedtls handshake successful\n");
+    }
 
 
     //TODO: actually send data encrypted over mbedtls

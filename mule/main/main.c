@@ -285,7 +285,7 @@ static void ble_subscribe(const struct peer *peer) {
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len)
 {
-
+    printf("mule called ble write long\n");
     //get peer from connection handle and peer chrs from uuids
     const struct peer *peer = peer_find(ble_conn_handle);
     const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
@@ -316,8 +316,13 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     trx_state = 1;
     chunk_ack = 0;
 
+    printf("writing to sensor\n");
+    printf("len: %d\n", len);
+
     int num_packets = ceil(len/(float)CHUNK_SIZE);
-    char local_buf[CHUNK_SIZE+3];
+    char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
+
+    printf("num packets: %d\n", num_packets);
 
     for (int i = 0; i < num_packets; i++) {
         // //make and copy header into local buffer
@@ -349,6 +354,8 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         header->len = len_for_write;
         header->total_chunks = num_packets;
 
+        printf("len_for_write: %d\n", len_for_write);
+
         //copy data into local buffer
         memcpy(local_buf + sizeof(struct ble_header), &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
 
@@ -359,7 +366,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         //wait for ack saying number of packets recieved is same as sent
         while (chunk_ack != i+1) {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
-            printf("waiting for ack from mule\n");
+            printf("waiting for ack from sensor\n");
         }
 
     }
@@ -380,6 +387,8 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
+
+    printf("mule called ble read long\n");
 
     while (data_buf_len < len) {
         printf("not enough data in buffer... wait\n");
@@ -1278,14 +1287,15 @@ void app_main() {
     }
 
    
-    int len;
-    uint8_t test_buf[1000];
-    //sensor_state[0] = 0xff; // start in sensor ack mode.. as if sensor acked
-    len = ble_read_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
-    len = ble_write_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
+    // //test read and write
+    // int len;
+    // uint8_t test_buf[1000];
+    // //sensor_state[0] = 0xff; // start in sensor ack mode.. as if sensor acked
+    // len = ble_read_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
+    // len = ble_write_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
     
     //mbedtls handshake
-    //mbedtls_stuff();
+    mbedtls_stuff();
 
     //start a timer 
 
