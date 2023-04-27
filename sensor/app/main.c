@@ -103,43 +103,59 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         return;
     }
 
-    //create a local buffer to store data
-    char local_buf[CHUNK_SIZE+3];
-
-    //Check if data is mule or data and store it
-    if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
-        printf("Data from Mule recieved!\n");
-        printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
-        //copy recieved data into local buffer 
-        memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
-
-        //check header to see where to store data
-        if (local_buf[0] == 0x00) {
-            printf("Mule is acking a packet\n");
-            //copy header into mule state
-            memcpy(mule_state, local_buf, 3);
-        }
-        else {
-            printf("Mule is writing packets\n");
-            // check header to see where to write data 
-            int num_chunks = local_buf[0];
-            int num_recieved_chunks = local_buf[1];
-
-            //copy data from local buffer into big buffer 
-            memcpy(&read_buf[num_recieved_chunks*CHUNK_SIZE], local_buf+3, p_ble_evt->evt.gatts_evt.params.write.len-3);
-        }
-    } 
-
-    if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
-        printf("Got a write to sensor characteristic!\n");
-        printf("Shouldn't happen!\n");
-    }
-
     else {
-        printf("Got a write to a non-Nebula characteristic!\n");
-        printf("ignoring...\n");
+        //create a local buffer to store data
+        char local_buf[CHUNK_SIZE+3];
+
+        //Check if data is mule or data and store it
+        if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
+            printf("Data from Mule recieved!\n");
+            printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+            //copy recieved data into local buffer 
+            memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
+
+            //check header to see where to store data
+            if (local_buf[0] == 0x00) {
+                printf("Mule is done sending\n");
+                //copy header into mule state
+                memcpy(mule_state, local_buf, 3);
+            }
+            else if (local_buf[0] == 0xff) {
+                printf("Mule is acking a packet\n");
+                //copy header into mule state
+                memcpy(mule_state, local_buf, 3);
+            }
+            else {
+                printf("Mule is writing packets\n");
+                // check header to see where to write data 
+                int num_chunks = local_buf[0];
+                int num_recieved_chunks = local_buf[1];
+
+                //copy data from local buffer into big buffer 
+                memcpy(&read_buf[(num_recieved_chunks-1)*CHUNK_SIZE], local_buf+3, p_ble_evt->evt.gatts_evt.params.write.len-3);
+            
+                //write an ack to mule 
+                local_buf[0] = 0xff; //ack header 
+                local_buf[1] = num_recieved_chunks; 
+                local_buf[2] = 0x00;
+                ble_write(local_buf, 3, &sensor_state_char, 0);
+            
+            }
+        } 
+
+        else if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
+            printf("Got a write to sensor characteristic!\n");
+            printf("Shouldn't happen!\n");
+        }
+
+        else {
+            printf("Got a write to a non-Nebula characteristic!\n");
+            printf("char handle: %d\n", p_ble_evt->evt.gatts_evt.params.write.handle);
+            printf("mule handle: %d\n", mule_state_char.char_handle.value_handle);
+            printf("sensor handle: %d\n", sensor_state_char.char_handle.value_handle);
+            printf("ignoring...\n");
+        }
     }
- 
 }
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
@@ -189,11 +205,17 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
         //wait for ack saying number of packets recieved is same as sent
         while (mule_state[1] != i+1) {
-            nrf_delay_ms(100);
+            nrf_delay_ms(1000);
             printf("waiting for ack from mule\n");
         }
 
     }
+
+    //write is done, reset to listening for mule 
+    local_buf[0] = 0x00;
+    local_buf[1] = 0x00;
+    local_buf[2] = 0x00;
+    error_code = ble_write((char *)local_buf, 3, &sensor_state_char, 0);
 
     return original_len;
 }
@@ -291,7 +313,7 @@ void data_test(uint16_t ble_conn_handle) {
 
     //make random data 1kB
     for (int i = 3; i < 1003; i++) {
-        data_buf[i] = 0x01; // rand() % 256;
+        data_buf[i] = rand() % 256;
     }
 
     error_code = ble_write_long(&ble_conn_handle, (char *)data_buf, 1000);
@@ -301,8 +323,8 @@ void data_test(uint16_t ble_conn_handle) {
     for (int i = 0; i < 1000; i++) {
         if (data_buf[i] != data_back[i]) {
             printf("error\n");
-            // printf("data_buf[%d] = %d\n", i, data_buf[i]);
-            // printf("data_back[%d] = %d\n", i, data_back[i]);
+            printf("data_buf[%d] = %d\n", i, data_buf[i]);
+            printf("data_back[%d] = %d\n", i, data_back[i]);
             continue;
         }
     }
@@ -577,7 +599,7 @@ int main(void) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
     //Read and write test
-    //data_test(ble_conn_handle);
+    data_test(ble_conn_handle);
     //read test 
 
     //stop ourselves from continuing on until read and write test is done
