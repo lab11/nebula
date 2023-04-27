@@ -930,7 +930,7 @@ char *encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_
     // First, verify that the output has enough space
     if (dest_len < ceil(src_len / 3.0) * 4) {
         printf("ERROR: Output buffer is too small to encode %d bytes to base64\n", src_len);
-        return;
+        return NULL;
     }
 
     // Now, encode the bytes
@@ -969,6 +969,10 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
 
     char *payload_end = encode_bytes_to_base64(
         post_data + prefix_len, payload, payload_len, sizeof(post_data) - prefix_len);
+    if (payload_end == NULL) {
+        printf("ERROR: Failed to encode payload to base64\n");
+        return;
+    }
     int encoded_payload_len = payload_end - (post_data + prefix_len);
     int post_len = prefix_len + encoded_payload_len + suffix_len;
     //printf("Payload = %s\n", payload);
