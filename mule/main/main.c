@@ -925,7 +925,7 @@ void http_get_test(void) {
     esp_http_client_cleanup(client);
 }
 
-void encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_len) {
+char *encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_len) {
 
     // First, verify that the output has enough space
     if (dest_len < ceil(src_len / 3.0) * 4) {
@@ -934,7 +934,7 @@ void encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_l
     }
 
     // Now, encode the bytes
-    bintob64(dest, src, src_len);
+    return bintob64(dest, src, src_len);
 }
 
 // Takes in a NULL-terminated string as a payload.
@@ -944,20 +944,10 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
     char post_data[1200] = {0};
     int prefix_len = sizeof(json_prefix) - 1;
     int suffix_len = sizeof(json_suffix) - 1;
-    int post_len = prefix_len + payload_len + suffix_len;
-    
-    //printf("Payload = %s\n", payload);
-    printf("Prefix length = %d, suffix length = %d, payload_len = %d, post_len = %d\n", prefix_len, suffix_len, payload_len, post_len);
     
     // Check to make sure the payload exists.
     if (payload_len <= 0) {
         printf("The payload is empty >:(");
-        return;
-    }
-    
-    // Check to make sure the payload isn't too long.
-    if (post_len >= sizeof(post_data)) {
-        printf("The payload is too long >:(");
         return;
     }
     
@@ -976,8 +966,21 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
 
     // POST
     memcpy(post_data, json_prefix, prefix_len);
-    encode_bytes_to_base64(post_data + prefix_len, payload, payload_len, sizeof(post_data) - prefix_len);
-    memcpy(post_data + prefix_len + payload_len, json_suffix, suffix_len);
+
+    char *payload_end = encode_bytes_to_base64(
+        post_data + prefix_len, payload, payload_len, sizeof(post_data) - prefix_len);
+    int encoded_payload_len = payload_end - (post_data + prefix_len);
+    int post_len = prefix_len + encoded_payload_len + suffix_len;
+    //printf("Payload = %s\n", payload);
+    printf("Prefix length = %d, suffix length = %d, payload_len = %d, post_len = %d\n", prefix_len, suffix_len, encoded_payload_len, post_len);
+
+    // Check to make sure the payload isn't too long.
+    if (post_len >= sizeof(post_data)) {
+        printf("The payload is too long >:(");
+        return;
+    }
+
+    memcpy(post_data + prefix_len + encoded_payload_len, json_suffix, suffix_len);
     
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
