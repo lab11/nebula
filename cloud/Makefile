@@ -1,3 +1,8 @@
+SERVER_PORT ?= 80
+PROVIDER_PORT ?= 90
+SERVER_MODE ?= app
+PROVIDER_URL ?=http://0.0.0.0:90
+
 .PHONY: build local remote clean destroy-local destroy-remote keypair
 
 local: build
@@ -14,10 +19,10 @@ remote: build
 	cd tf/gcp && terraform init && terraform apply -auto-approve
 
 provider-local: build
-	sudo docker run -it --rm -p 80:80 --name provider --env SERVER_PORT=$SERVER_PORT --env SERVER_MODE=$SERVER_MODE galaxy_cloud
+	sudo docker run -it --rm -p 90:90 --name provider --env SERVER_PORT=$(PROVIDER_PORT) --env SERVER_MODE=provider galaxy_cloud
 
 appserver-local: build
-	sudo docker run -it --rm --name app-server --env SERVER_PORT=$SERVER_PORT --env SERVER_MODE=$SERVER_MODE --env PROVIDER_URL=$PROVIDER_URL -p 80:80 galaxy_cloud
+	sudo docker run -it --rm --name app-server --env SERVER_PORT=$(SERVER_PORT) --env SERVER_MODE=app --env PROVIDER_URL=$(PROVIDER_URL) -p 80:80 galaxy_cloud
 
 build:
 	mkdir -p _build
