@@ -40,7 +40,7 @@
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
 #define CHUNK_SIZE 200
-#define READ_TIMEOUT_MS 10000   /* 10 seconds */
+#define READ_TIMEOUT_MS 30000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
 #define DEBUG_LEVEL 4
 
@@ -194,6 +194,13 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             }
             else if (header->type == 0x02) { // mule is sending a fin
                 // we're done go back to listening
+                printf("Got a fin from mule\n");
+                printf("final data_buf_len: %d\n", data_buf_len);
+                //print the data buf 
+                printf("data_buf at fin: ");
+                for (uint32_t i = 0; i < data_buf_len; i++) {
+                    printf("%c", data_buf[i]);
+                }
                 trx_state = 0;
             }
         } 
@@ -299,6 +306,9 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     fin_header->chunk = 0x00;
     fin_header->len = 0x00;
     fin_header->total_chunks = 0x00;
+
+    printf("write fin to mule\n");
+
     
     error_code = ble_write((char *)local_buf, sizeof(struct ble_header), &sensor_state_char, 0);
 
@@ -324,10 +334,18 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         return 0;
     }
 
+    while (trx_state != 0) {
+        printf("we are recieving or writing data, wait before reading\n");
+        nrf_delay_ms(1000);
+    }
+
     // best happy case: we have data that's finished and available to copy
     if (trx_state == 0 && data_buf_len > 0) { // we're in listening mode
         memcpy(buf, data_buf, data_buf_len);
         printf("ble_read_long: read %d bytes\n", data_buf_len);
+        for (int i = 0; i < data_buf_len; i++) {
+            printf("%c", buf[i]);
+        }
 
         //clear data_buf state 
         data_buf_len = 0;
@@ -335,6 +353,13 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
         return data_buf_len;
     }
+
+    if (trx_state == 0 && data_buf_len == 0) {
+        // no data yet but listening for data
+        printf("ble_read_long: no data available return 0\n");
+        return 0;
+    }
+
 
     printf("ble_read_long: no data available\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
@@ -691,8 +716,8 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
-    printf("BLE connected, waiting 5 seconds...\n");
-    nrf_delay_ms(5000);
+    printf("BLE connected, waiting 7 seconds...\n");
+    nrf_delay_ms(7000);
 
     //printf("BLE connected, start mbedtls handshake\n");
 

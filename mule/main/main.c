@@ -73,7 +73,7 @@ static const ble_uuid_t *mule_chr_uuid = BLE_UUID128_DECLARE(
 
 #define CHUNK_SIZE 200
 #define MAX_PAYLOADS 1
-#define READ_TIMEOUT_MS 1000
+#define READ_TIMEOUT_MS 3000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11" // TODO??
 #define READ_BUF_SIZE 1024
@@ -382,13 +382,16 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
     }
 
-    //send fine to sensor
+    //send fin to sensor
     struct ble_header *fin_header = (struct ble_header *) local_buf;
     fin_header->type = 0x02;
     fin_header->chunk = 0x00;
     fin_header->len = 0x00;
     fin_header->total_chunks = 0x00;
     ble_write(peer, (char *)local_buf, chr_mule, sizeof(struct ble_header));
+
+    printf("write fin to sensor\n");
+    //printf("final data_buf_len: %d\n", data_buf_len);
 
     //write is done, reset to listening 
     trx_state = 0;
@@ -407,6 +410,17 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         return 0;
     }
 
+    while (trx_state != 0) {
+        printf("we are recieving or writing data, wait before reading\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    while (trx_state == 0 && data_buf_len == 0) {
+        // no data yet but listening for data
+        printf("no data available yet wait\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
     // best happy case: we have data that's finished and available to copy
     if (trx_state == 0 && data_buf_len > 0) {
         memcpy(buf, data_buf, data_buf_len);
@@ -418,6 +432,8 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
         return data_buf_len;
     }
+
+
 
     printf("ble_read_long: no data available\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
