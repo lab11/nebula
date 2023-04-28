@@ -101,14 +101,19 @@ bool sema_data;
 
 void ble_store_config_init();
 
-// A little buffer and pointer array to hold our payloads.
-//static char payload_buff[200];
-//static char *payload_starts[10];
-
 // A little buffer and pointer array to hold our tokens
 static int num_stored_tokens = 0;
 static char token_buff[1000] = {0}; // each token is 88 bytes
 static char *token_starts[12]; // we can store up to 11 tokens
+
+/*  Root certs for our application server and platform provider. 
+    
+    To embed it in the app binary, the PEM file is named
+    in the component.mk COMPONENT_EMBED_TXTFILES variable in CMakeLists.txt.
+*/
+
+extern const char app_and_server_cert_pem_start[] asm("_binary_app_and_server_cert_pem_start");
+extern const char app_and_server_cert_pem_end[]   asm("_binary_app_and_server_cert_pem_end");
 
 /*
 * App call back for read of characteristic has completed
@@ -938,7 +943,7 @@ char *encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_
 }
 
 // Takes in a NULL-terminated string as a payload.
-void http_attempt_single_upload(uint8_t payload[], int payload_len) {
+void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     char json_prefix[] = "{\"data\":\"";
     char json_suffix[] = "\"}";
     char post_data[1200] = {0};
@@ -954,12 +959,25 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
     // Instantiate a buffer to hold our resulting data.
     char responseBuffer[105] = {0}; // I think our responses are 101 bytes long, so this should fit.
     
+    /* HTTP code
     // If everything looks ok, we do a POST request.
     esp_http_client_config_t config = {
         .host = "34.27.170.95", // hehe we only have one APP server :3
         .path = "/deliver",
         .transport_type = HTTP_TRANSPORT_OVER_TCP,
         .event_handler = _http_event_handler,
+        .user_data = responseBuffer,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    */
+    
+    // If everything looks ok, we do a POST request over HTTPS.
+    esp_http_client_config_t config = {
+        .host = "34.27.170.95", // hehe we only have one APP server :3
+        .path = "/deliver",
+        .transport_type = HTTP_TRANSPORT_OVER_SSL,
+        .event_handler = _http_event_handler,
+        .cert_pem = app_and_server_cert_pem_start,
         .user_data = responseBuffer,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -1033,15 +1051,15 @@ void http_attempt_single_upload(uint8_t payload[], int payload_len) {
 }
 
 // Takes in an array of pointers to NULL-terminated strings.
-void http_attempt_many_uploads() { // char *payloads[], int num_payloads) { // Modified to read from a global variable.
+void https_attempt_many_uploads() { // char *payloads[], int num_payloads) { // Modified to read from a global variable.
     for (int i = 0; i < num_payloads; i++) {
         // For each pointer, we do a single POST request.
-        http_attempt_single_upload(payloads[i], payloads[i+1] - payloads[i]);
+        https_attempt_single_upload(payloads[i], payloads[i+1] - payloads[i]);
     }
 }
 
 // Takes in an array of pointers to NULL-terminated strings.
-void http_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated http_attempt_redeem() to read from global variables.
+void https_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated http_attempt_redeem() to read from global variables.
     char json_prefix[] = "{\"tokens\":[\"";
     char json_suffix[] = "\"]}";
     char json_delim[] = "\",\"";
@@ -1065,8 +1083,9 @@ void http_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated http
     esp_http_client_config_t config = {
         .host = "34.31.110.212", // hehe we hardcode the provider IP :3
         .path = "/redeem_tokens",
-        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
+        .cert_pem = app_and_server_cert_pem_start,
         .user_data = responseBuffer,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -1257,11 +1276,11 @@ void app_main() {
     // after a delay if it fails.
 
     // Upload all of our data to the application servers and collect tokens :3
-    http_attempt_many_uploads();
+    https_attempt_many_uploads();
     
     printf("Finished our multiple upload!!\n\nNow trying the token redemption!\n");
 
-    http_attempt_redeem();
+    https_attempt_redeem();
     
     printf("Finished the token redemption test! Hopefully everything works >.>\n");
 
