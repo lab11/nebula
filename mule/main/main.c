@@ -296,7 +296,8 @@ static void ble_subscribe(const struct peer *peer) {
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len)
 {
-    printf("mule called ble write long\n");
+    printf("\n--\nmule called ble write long\n");
+    printf("\thandle: %p buf: %p len: %d\n", p_ble_conn_handle, buf, len);
     //get peer from connection handle and peer chrs from uuids
     const struct peer *peer = peer_find(ble_conn_handle);
     const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
@@ -410,35 +411,24 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         return 0;
     }
 
-    while (trx_state != 0) {
-        printf("we are recieving or writing data, wait before reading\n");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-
-    while (trx_state == 0 && data_buf_len == 0) {
-        // no data yet but listening for data
-        printf("no data available yet wait\n");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-
     // best happy case: we have data that's finished and available to copy
     if (trx_state == 0 && data_buf_len > 0) {
-        memcpy(buf, data_buf, data_buf_len);
-        printf("ble_read_long: read %ld bytes\n", data_buf_len);
+
+        size_t copy_len = len > data_buf_len ? data_buf_len : len;
+
+        memcpy(buf, data_buf, copy_len);
+        printf("ble_read_long: read %ld bytes, copied %d bytes\n", data_buf_len, copy_len);
 
         //clear data_buf state 
         data_buf_len = 0;
         data_buf_num_chunks = 0;
 
-        return data_buf_len;
+        return copy_len;
     }
 
-
-
-    printf("ble_read_long: no data available\n");
+    printf("ble_read_long: no data available, returning SSL_WANT_READ\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
 }
-
 
 /**
  * Initiates the GAP general discovery procedure.

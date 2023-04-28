@@ -122,101 +122,100 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         return;
     }
 
-    else {
-        //create a local buffer to store data
-        char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
+    //create a local buffer to store data
+    char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
 
-        //Check if data is mule or data and store it
-        if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
-            printf("Data from Mule recieved!\n");
-            printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
-            //copy recieved data into local buffer 
-            memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
+    //Check if data is mule or data and store it
+    if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
+        printf("Data from Mule recieved!\n");
+        printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+        //copy recieved data into local buffer 
+        memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
 
-            //check header to see where to store data
-            struct ble_header *header = (struct ble_header *) local_buf;
-            if (header->type == 0x00) { // mule is sending a payload 
-                //check if we were writing (bad times)
-                if (trx_state == 1) {
-                    printf("Mule is sending a payload while we are writing\n");
-                    return;
-                }
-
-                //check we're ready to get more data 
-                if (trx_state == 0 && data_buf_len != 0) {
-                    printf("Mule is trying to send a new payload while our data buffer has content\n");
-                    return;
-                }
-                
-                //sanity check on chunk number
-                if (header->chunk != data_buf_num_chunks) {
-                    printf("Mule is sending a payload with the wrong chunk number\n");
-                    return;
-                }
-                
-                trx_state = 2; // switch to recieving state
-                // recieve payload 
-                memcpy(&data_buf[data_buf_len], local_buf+sizeof(struct ble_header), header->len);
-                //update data_buf_len
-                data_buf_len += header->len;
-                data_buf_num_chunks += 1;
-
-                //send ack 
-                struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
-                ble_write((unsigned char *) &ack_header, sizeof(struct ble_header), &sensor_state_char, 0);
- 
-            } 
-            else if (header->type == 0x01) { // mule is sending an ack
-                //check if we were listening (bad times)
-                if (trx_state == 0) {
-                    printf("Mule is sending an ack while we are listening\n");
-                    return;
-                }
-
-                //check if we were recieving (bad times)
-                if (trx_state == 2) {
-                    printf("Mule is sending an ack while we are recieving data\n");
-                    return;
-                }
-
-                //recieving an ack! 
-                printf("Got an ack for chunk %d\n", header->chunk);
-
-                //check if ack is for the right chunk
-                if (header->chunk != chunk_ack) {
-                    printf("Mule is sending an ack for the wrong chunk\n");
-                    return;
-                }
-                else { //chunk is the right chunks
-                    chunk_ack += 1;
-                }
-
+        //check header to see where to store data
+        struct ble_header *header = (struct ble_header *) local_buf;
+        if (header->type == 0x00) { // mule is sending a payload 
+            //check if we were writing (bad times)
+            if (trx_state == 1) {
+                printf("Mule is sending a payload while we are writing\n");
+                return;
             }
-            else if (header->type == 0x02) { // mule is sending a fin
-                // we're done go back to listening
-                printf("Got a fin from mule\n");
-                printf("final data_buf_len: %d\n", data_buf_len);
-                //print the data buf 
-                printf("data_buf at fin: ");
-                for (uint32_t i = 0; i < data_buf_len; i++) {
-                    printf("%c", data_buf[i]);
-                }
-                trx_state = 0;
+
+            //check we're ready to get more data 
+            if (trx_state == 0 && data_buf_len != 0) {
+                printf("Mule is trying to send a new payload while our data buffer has content\n");
+                return;
             }
+            
+            //sanity check on chunk number
+            if (header->chunk != data_buf_num_chunks) {
+                printf("Mule is sending a payload with the wrong chunk number\n");
+                return;
+            }
+            
+            trx_state = 2; // switch to recieving state
+            // recieve payload 
+            memcpy(&data_buf[data_buf_len], local_buf+sizeof(struct ble_header), header->len);
+            //update data_buf_len
+            data_buf_len += header->len;
+            data_buf_num_chunks += 1;
+
+            //send ack 
+            struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
+            ble_write((unsigned char *) &ack_header, sizeof(struct ble_header), &sensor_state_char, 0);
+
         } 
+        else if (header->type == 0x01) { // mule is sending an ack
+            //check if we were listening (bad times)
+            if (trx_state == 0) {
+                printf("Mule is sending an ack while we are listening\n");
+                return;
+            }
 
-        else if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
-            printf("Got a write to sensor characteristic!\n");
-            printf("Shouldn't happen!\n");
-        }
+            //check if we were recieving (bad times)
+            if (trx_state == 2) {
+                printf("Mule is sending an ack while we are recieving data\n");
+                return;
+            }
 
-        else {
-            printf("Got a write to a non-Nebula characteristic!\n");
-            //printf("char handle: %d\n", p_ble_evt->evt.gatts_evt.params.write.handle);
-            //printf("mule handle: %d\n", mule_state_char.char_handle.value_handle);
-            //printf("sensor handle: %d\n", sensor_state_char.char_handle.value_handle);
-            printf("ignoring...\n");
+            //recieving an ack! 
+            printf("Got an ack for chunk %d\n", header->chunk);
+
+            //check if ack is for the right chunk
+            if (header->chunk != chunk_ack) {
+                printf("Mule is sending an ack for the wrong chunk\n");
+                return;
+            }
+            else { //chunk is the right chunks
+                chunk_ack += 1;
+            }
+
         }
+        else if (header->type == 0x02) { // mule is sending a fin
+            // we're done go back to listening
+            printf("Got a fin from mule\n");
+            printf("final data_buf_len: %d\n", data_buf_len);
+            //print the data buf 
+            printf("data_buf at fin: \n");
+            for (uint32_t i = 0; i < data_buf_len; i++) {
+                printf("%x ", data_buf[i]);
+            }
+            printf("\n");
+            trx_state = 0;
+        }
+    } 
+
+    else if (p_ble_evt->evt.gatts_evt.params.write.handle == sensor_state_char.char_handle.value_handle) {
+        printf("Got a write to sensor characteristic!\n");
+        printf("Shouldn't happen!\n");
+    }
+
+    else {
+        printf("Got a write to a non-Nebula characteristic!\n");
+        //printf("char handle: %d\n", p_ble_evt->evt.gatts_evt.params.write.handle);
+        //printf("mule handle: %d\n", mule_state_char.char_handle.value_handle);
+        //printf("sensor handle: %d\n", sensor_state_char.char_handle.value_handle);
+        printf("ignoring...\n");
     }
 }
 
@@ -334,34 +333,22 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         return 0;
     }
 
-    while (trx_state != 0) {
-        printf("we are recieving or writing data, wait before reading\n");
-        nrf_delay_ms(1000);
-    }
-
     // best happy case: we have data that's finished and available to copy
     if (trx_state == 0 && data_buf_len > 0) { // we're in listening mode
-        memcpy(buf, data_buf, data_buf_len);
-        printf("ble_read_long: read %d bytes\n", data_buf_len);
-        for (int i = 0; i < data_buf_len; i++) {
-            printf("%c", buf[i]);
-        }
+
+        size_t copy_len = len > data_buf_len ? data_buf_len : len;
+
+        memcpy(buf, data_buf, copy_len);
+        printf("ble_read_long: read %d bytes, copied %d bytes\n", data_buf_len, copy_len);
 
         //clear data_buf state 
         data_buf_len = 0;
         data_buf_num_chunks = 0;
 
-        return data_buf_len;
+        return copy_len;
     }
 
-    if (trx_state == 0 && data_buf_len == 0) {
-        // no data yet but listening for data
-        printf("ble_read_long: no data available return 0\n");
-        return 0;
-    }
-
-
-    printf("ble_read_long: no data available\n");
+    printf("ble_read_long: no data available right now, returning SSL_WANT_READ\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
 }
 
@@ -403,9 +390,7 @@ int ble_write(unsigned char *buf, uint16_t len, simple_ble_char_t *characteristi
     printf("Wrote %d bytes to handle %d\n", len, hvx_params.handle);
 
     return ret_code;
-
 }
-
 
 // Function to receive data over BLE
 int ble_read(simple_ble_char_t *characteristic) {
@@ -486,11 +471,13 @@ static struct dtls_delay_ctx delay_ctx;
 
 static void dtls_int_timer_handler(void * p_context) {
     struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) p_context;
+    printf("int timer expired\n");
     ctx->int_timer_expired = true;
 }
 
 static void dtls_fin_timer_handler(void * p_context) {
     struct dtls_delay_ctx *ctx = (struct dtls_delay_ctx *) p_context;
+    printf("fin timer expired\n");
     ctx->fin_timer_expired = true;
 }
 
@@ -734,11 +721,14 @@ int main(void) {
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
     // handshake
+    printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
         //try again  
-        nrf_delay_ms(5000);
+        nrf_delay_ms(1000);
+        printf("mbedtls_handshake returning %x... trying again\n", ret);
         ret = mbedtls_ssl_handshake(&ssl);
+        fflush(stdout);
     }
     // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
     //          ret == MBEDTLS_ERR_SSL_WANT_WRITE );
