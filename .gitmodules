@@ -12,4 +12,4 @@
 	url = https://github.com/espressif/esp-idf
 [submodule "ext/anonymous-tokens"]
 	path = ext/anonymous-tokens
-	url = git@github.com:jlwatson/anonymous-tokens
+	url = https://github.com/jlwatson/anonymous-tokens
