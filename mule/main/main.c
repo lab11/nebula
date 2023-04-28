@@ -298,6 +298,13 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 {
     printf("\n--\nmule called ble write long\n");
     printf("\thandle: %p buf: %p len: %d\n", p_ble_conn_handle, buf, len);
+
+    printf("\n\n\n BUFFER CONTENTS:\n");
+    for (int i = 0; i < len; i++) {
+        printf("%02x ", buf[i]);
+    }
+    printf("\n\n\n");
+
     //get peer from connection handle and peer chrs from uuids
     const struct peer *peer = peer_find(ble_conn_handle);
     const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);

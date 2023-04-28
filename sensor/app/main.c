@@ -196,9 +196,9 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             printf("Got a fin from mule\n");
             printf("final data_buf_len: %d\n", data_buf_len);
             //print the data buf 
-            printf("data_buf at fin: \n");
+            printf("data_buf at fin: (%d)\n", data_buf_len);
             for (uint32_t i = 0; i < data_buf_len; i++) {
-                printf("%x ", data_buf[i]);
+                printf("%02x ", data_buf[i]);
             }
             printf("\n");
             trx_state = 0;
@@ -344,6 +344,14 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         //clear data_buf state 
         data_buf_len = 0;
         data_buf_num_chunks = 0;
+
+        printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
+        for (int i = 0; i < copy_len; i++) {
+            printf("%02x ", buf[i]);
+            nrf_delay_ms(10);
+            fflush(stdout);
+        }
+        printf("\n\n\n");
 
         return copy_len;
     }
