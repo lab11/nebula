@@ -18,7 +18,7 @@
 #include "nrf_drv_rng.h"
 #include "nrf_drv_timer.h"
 #include "simple_ble.h"
-#include "mbedtls/config.h"
+//#include "mbedtls/config.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
@@ -195,12 +195,15 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             // we're done go back to listening
             printf("Got a fin from mule\n");
             printf("final data_buf_len: %d\n", data_buf_len);
+            #if defined(MBEDTLS_SSL_PROTO_DTLS)
+            printf("TEST PROTO DTLS\n");
+            #endif
             //print the data buf 
-            printf("data_buf at fin: (%d)\n", data_buf_len);
-            for (uint32_t i = 0; i < data_buf_len; i++) {
-                printf("%02x ", data_buf[i]);
-            }
-            printf("\n");
+            // printf("data_buf at fin: (%d)\n", data_buf_len);
+            // for (uint32_t i = 0; i < data_buf_len; i++) {
+            //     printf("%02x ", data_buf[i]);
+            // }
+            // printf("\n");
             trx_state = 0;
         }
     } 
@@ -340,18 +343,20 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
         memcpy(buf, data_buf, copy_len);
         printf("ble_read_long: read %d bytes, copied %d bytes\n", data_buf_len, copy_len);
+        nrf_delay_ms(1000);
+        fflush(stdout);
 
         //clear data_buf state 
         data_buf_len = 0;
         data_buf_num_chunks = 0;
 
-        printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
-        for (int i = 0; i < copy_len; i++) {
-            printf("%02x ", buf[i]);
-            nrf_delay_ms(10);
-            fflush(stdout);
-        }
-        printf("\n\n\n");
+        // printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
+        // for (int i = 0; i < copy_len; i++) {
+        //     printf("%02x ", buf[i]);
+        //     nrf_delay_ms(10);
+        //     fflush(stdout);
+        // }
+        // printf("\n\n\n");
 
         return copy_len;
     }
@@ -618,7 +623,9 @@ int main(void) {
                                 (const unsigned char *) key_data,
                                 sensor_cli_key_len,
                                 NULL,
-                                0);
+                                0,
+                                mbedtls_ctr_drbg_random,
+                                &ctr_drbg);
     if (ret != 0) {
         printf(" failed\n  !  mbedtls_pk_parse_key returned %d\n\n", ret);
         
@@ -642,6 +649,9 @@ int main(void) {
         
     }
 
+    printf("Done setting up the DTLS data...\n");
+    fflush(stdout);
+
     //setup debug
     
     mbedtls_debug_set_threshold(DEBUG_LEVEL);
@@ -649,25 +659,38 @@ int main(void) {
 
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
+    printf("ssl conf ca chain...\n");
+    fflush(stdout);
     mbedtls_ssl_conf_ca_chain(&conf, srvcert.next, NULL);
+    printf("ssl conf own cert...\n");
+    fflush(stdout);
     if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0) {
         printf(" failed\n  ! mbedtls_ssl_conf_own_cert returned %d\n\n", ret);
         
     }
 
+    printf("ssl cookie setup...\n");
+    fflush(stdout);
     if ((ret = mbedtls_ssl_cookie_setup(&cookie_ctx,
                                         mbedtls_ctr_drbg_random, &ctr_drbg)) != 0) {
         printf(" failed\n  ! mbedtls_ssl_cookie_setup returned %d\n\n", ret);
         
     }
 
+    printf("ssl conf dtls cookies...\n");
+    fflush(stdout);
     mbedtls_ssl_conf_dtls_cookies(&conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
                                   &cookie_ctx);
 
+    printf("ssl setup...\n");
+    fflush(stdout);
     if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
         printf(" failed\n  ! mbedtls_ssl_setup returned %d\n\n", ret);
         
     }
+
+    printf("ssl timer cb...\n");
+    fflush(stdout);
 
     mbedtls_ssl_set_timer_cb(&ssl, &delay_ctx, dtls_set_delay, dtls_get_delay);
 

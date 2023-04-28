@@ -1257,15 +1257,6 @@
 #define MBEDTLS_SSL_SERVER_NAME_INDICATION
 
 /**
- * \def MBEDTLS_SSL_TRUNCATED_HMAC
- *
- * Enable support for RFC 6066 truncated HMAC in SSL.
- *
- * Comment this macro to disable support for truncated HMAC in SSL
- */
-#define MBEDTLS_SSL_TRUNCATED_HMAC
-
-/**
  * \def MBEDTLS_THREADING_ALT
  *
  * Provide your own alternate threading implementation.
@@ -2207,6 +2198,7 @@
  * This module adds support for SHA-224 and SHA-256.
  * This module is required for the SSL/TLS 1.2 PRF function.
  */
+#define MBEDTLS_SHA224_C
 #define MBEDTLS_SHA256_C
 
 /**
