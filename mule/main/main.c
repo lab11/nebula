@@ -37,6 +37,7 @@
 #include "mbedtls/timing.h"
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl_cookie.h"
+#include "mbedtls/debug.h"
 //#include "certs.h"
 #include "time.h"
 
@@ -76,6 +77,7 @@ static const ble_uuid_t *mule_chr_uuid = BLE_UUID128_DECLARE(
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11" // TODO??
 #define READ_BUF_SIZE 1024
+#define DEBUG_LEVEL 2
 
 
 uint8_t sensor_state_data [1500]; // for storing the data 
@@ -130,6 +132,15 @@ uint8_t trx_state = 0;  // 0-listening,1-writing,2-recieving
 
 uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
 
+static void my_debug(void *ctx, int level,
+                     const char *file, int line,
+                     const char *str)
+{
+    ((void) level);
+
+    mbedtls_fprintf((FILE *) ctx, "%s:%04d: %s", file, line, str);
+    fflush((FILE *) ctx);
+}
 
 /*
 * App call back for read of characteristic has completed
@@ -377,7 +388,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     fin_header->chunk = 0x00;
     fin_header->len = 0x00;
     fin_header->total_chunks = 0x00;
-    ble_write(peer, (char *)local_buf, chr_mule, 3);
+    ble_write(peer, (char *)local_buf, chr_mule, sizeof(struct ble_header));
 
     //write is done, reset to listening 
     trx_state = 0;
@@ -390,22 +401,26 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
     printf("mule called ble read long\n");
 
-    while (data_buf_len < len) {
-        printf("not enough data in buffer... wait\n");
-        printf("data_buf_len: %ld\n", data_buf_len);
-        printf("len: %d\n", len);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // connection has been closed
+    if (connected == 0) {
+        printf("ble_read_long: connection closed\n");
+        return 0;
     }
-    
-    // now we have enough data in theory 
-    memcpy(buf, data_buf, len);
 
-    //clear data_buf state 
-    data_buf_len = 0;
-    data_buf_num_chunks = 0;
+    // best happy case: we have data that's finished and available to copy
+    if (trx_state == 0 && data_buf_len > 0) {
+        memcpy(buf, data_buf, data_buf_len);
+        printf("ble_read_long: read %ld bytes\n", data_buf_len);
 
-    return len;    
+        //clear data_buf state 
+        data_buf_len = 0;
+        data_buf_num_chunks = 0;
 
+        return data_buf_len;
+    }
+
+    printf("ble_read_long: no data available\n");
+    return MBEDTLS_ERR_SSL_WANT_READ;
 }
 
 
@@ -851,6 +866,9 @@ void mbedtls_stuff() {
         
     }
 
+    mbedtls_debug_set_threshold(DEBUG_LEVEL);
+    mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+
     //TODO: OPTIONAL is usually a bad choice for security
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
@@ -1285,6 +1303,9 @@ void app_main() {
         printf("waiting for BLE connection\n");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
+
+    printf("BLE connected, waiting 5 seconds...\n");
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
 
    
     // //test read and write

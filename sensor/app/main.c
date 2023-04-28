@@ -42,7 +42,7 @@
 #define CHUNK_SIZE 200
 #define READ_TIMEOUT_MS 10000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 4
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -312,22 +312,32 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
     printf("sensor called ble read long\n");
 
-    while (data_buf_len < len) {
-        printf("not enough data in buffer... wait\n");
-        printf("data_buf_len: %ld\n", data_buf_len);
-        printf("read long len: %d\n", len);
-        nrf_delay_ms(1000);
+    // If data has been received, the positive number of bytes received.
+    // * \returns        \c 0 if the connection has been closed.
+    // * \returns        If performing non-blocking I/O, \c MBEDTLS_ERR_SSL_WANT_READ
+    // *                 must be returned when the operation would block.
+    // * \returns        Another negative error code on other kinds of failures.
+
+    // connection has been closed
+    if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
+        printf("ble_read_long: not connected can't read\n");
+        return 0;
     }
-    
-    // now we have enough data in theory 
-    memcpy(buf, data_buf, len);
 
-    //clear data_buf state 
-    data_buf_len = 0;
-    data_buf_num_chunks = 0;
+    // best happy case: we have data that's finished and available to copy
+    if (trx_state == 0 && data_buf_len > 0) { // we're in listening mode
+        memcpy(buf, data_buf, data_buf_len);
+        printf("ble_read_long: read %d bytes\n", data_buf_len);
 
-    return len;
-    
+        //clear data_buf state 
+        data_buf_len = 0;
+        data_buf_num_chunks = 0;
+
+        return data_buf_len;
+    }
+
+    printf("ble_read_long: no data available\n");
+    return MBEDTLS_ERR_SSL_WANT_READ;
 }
 
 // Function to send data over BLE
@@ -680,6 +690,9 @@ int main(void) {
         nrf_delay_ms(100);
         ble_conn_handle = simple_ble_app->conn_handle;
     }
+
+    printf("BLE connected, waiting 5 seconds...\n");
+    nrf_delay_ms(5000);
 
     //printf("BLE connected, start mbedtls handshake\n");
 
