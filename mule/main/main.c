@@ -932,7 +932,7 @@ void mbedtls_stuff() {
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
         //try handshake again delay
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         //printf("mbedtls_ssl_handshake returned %d\n", ret);
         
         char error_buf[100];
