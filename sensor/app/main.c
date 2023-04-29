@@ -1,5 +1,5 @@
 /*
- * Galaxy test app with BLE and Crypto enabled
+ * Nebula sensor test application
  */
 
 #include <stdbool.h>
@@ -88,6 +88,7 @@ struct ble_header {
     uint8_t total_chunks; 
 };
 
+// Sensor and Mule characteristic states
 uint8_t sensor_state [CHUNK_SIZE+sizeof(struct ble_header)];
 uint8_t mule_state [CHUNK_SIZE+sizeof(struct ble_header)];
 
@@ -96,56 +97,55 @@ uint8_t data_buf[READ_BUF_SIZE];
 uint32_t data_buf_len = 0;
 uint8_t data_buf_num_chunks = 0;
 uint8_t trx_state = 0;  // 0-listening,1-writing,2-recieving
-
-uint8_t fin_buf[READ_BUF_SIZE*2];
+uint8_t fin_buf[READ_BUF_SIZE*2]; // stores data when transfer is finished
 uint32_t fin_buf_len = 0;
-
 uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
+
+//Debugging? Enable this.
+bool nebula_debug = false;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/* nRF rtt log init function */
 int logging_init() {
     ret_code_t error_code = NRF_SUCCESS;
     error_code = NRF_LOG_INIT(NULL);
-    //APP_ERROR_CHECK(error_code);
+    APP_ERROR_CHECK(error_code);
     NRF_LOG_DEFAULT_BACKENDS_INIT();
     return error_code;
 }
 
-int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
+/* setup entropy source for mebed */
+void entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
 {
     //Call TRNG peripheral:
     nrf_drv_rng_block_rand(output, len);
     *olen = len;
 
     // Return 0 on success
-    return 0;
+    //return 0;
 }
 
-void ble_evt_connected(ble_evt_t const * p_ble_evt) {
-    printf("Connected!\n");
-    //set conn_handle
-    //printf("connection mtu%d\n", p_ble_evt->evt.gap_evt.params.mtu_exchaged.mtu);
-    //printf("")
-}
-
+/* event called when sensor gets a write over BLE*/
 void ble_evt_write(ble_evt_t const * p_ble_evt) { 
-
-    //print("mtu exchanged %d\n", p_ble_evt->evt.gatts_evt.params.mtu_exchanged.mtu);
 
     // Check if the event if on the link for this central
     if (p_ble_evt->evt.gatts_evt.conn_handle != simple_ble_app->conn_handle) {
         return;
     }
 
-
     //create a local buffer to store data
     char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
 
     //Check if data is mule or data and store it
     if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
-        //printf("Data from Mule recieved!\n");
-        //printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+
+        //if debugging, print 
+        if (nebula_debug) {
+            printf("Data from Mule recieved!\n");
+            printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+        }
+       
         //copy recieved data into local buffer 
         memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
 
@@ -170,19 +170,20 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
                 return;
             }
             
-            trx_state = 2; // switch to recieving state
-            // recieve payload 
+            trx_state = 2; // switch to recieving state and recieve payload 
             memcpy(&data_buf[data_buf_len], local_buf+sizeof(struct ble_header), header->len);
-            //update data_buf_len
+            //update data_buf_len and num chunks with updated state
             data_buf_len += header->len;
             data_buf_num_chunks += 1;
 
-            // //print data_buf_len
-            // printf("data_buf_len right after recieve: %d\n", data_buf_len);
-            // printf("chunk number: %d\n", header->chunk);
-            // printf("data_buf_num_chunks right after recieve: %d\n", data_buf_num_chunks);
+            //if debugging, print updated state info
+            if (nebula_debug) {
+                printf("data_buf_len right after recieve: %d\n", data_buf_len);
+                printf("chunk number right after recieve: %d\n", header->chunk);
+                printf("data_buf_num_chunks right after recieve: %d\n", data_buf_num_chunks);
+            }
 
-            //send ack 
+            //send ack to sensor since we sucessfully got the payload
             struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
             ble_write((unsigned char *) &ack_header, sizeof(struct ble_header), &sensor_state_char, 0);
 
@@ -200,8 +201,12 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
                 return;
             }
 
-            //recieving an ack! 
-            //printf("Got an ack for chunk %d\n", header->chunk);
+            //recieving an ack from sensor! 
+
+            //if debugging, print ack info
+            if (nebula_debug) {
+                printf("Got an ack for chunk %d\n", header->chunk);
+            }
 
             //check if ack is for the right chunk
             if (header->chunk != chunk_ack) {
@@ -214,25 +219,21 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 
         }
         else if (header->type == 0x02) { // mule is sending a fin
-            // we're done go back to listening
-
-
+            
             // put the buffer in fin_buf and reset data_buf 
             memcpy(fin_buf, data_buf, data_buf_len);
             fin_buf_len = data_buf_len;
             data_buf_len = 0;
             data_buf_num_chunks = 0;
 
-            // printf("Got a fin from mule\n");
-            // printf("data_buf_len: %d\n", data_buf_len);
-            // printf("fin_buf_len: %d\n", fin_buf_len);
+            //if debugging, print fin info
+            if (nebula_debug) {
+                printf("Got a fin from mule\n");
+                printf("data_buf_len: %d\n", data_buf_len);
+                printf("fin_buf_len: %d\n", fin_buf_len);
+            }
 
-            //print the data buf 
-            // printf("data_buf at fin: (%d)\n", data_buf_len);
-            // for (uint32_t i = 0; i < data_buf_len; i++) {
-            //     printf("%02x ", data_buf[i]);
-            // }
-            // printf("\n");
+            // we're done go back to listening
             trx_state = 0;
         }
     } 
@@ -244,16 +245,17 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 
     else {
         printf("Got a write to a non-Nebula characteristic!\n");
-        //printf("char handle: %d\n", p_ble_evt->evt.gatts_evt.params.write.handle);
-        //printf("mule handle: %d\n", mule_state_char.char_handle.value_handle);
-        //printf("sensor handle: %d\n", sensor_state_char.char_handle.value_handle);
         printf("ignoring...\n");
     }
 }
 
+/* writes big packets over BLE in chunks, requires ack from sensor */
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
 {
-    //printf("sensor called ble write long\n");
+    //if debugging, print write info
+    if (nebula_debug) {
+        printf("sensor called ble write long\n");
+    }
 
     int error_code = 0;
     int original_len = len;
@@ -266,7 +268,14 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
     //sanity check we are in listening state
     while (trx_state != 0) {
-        //printf("we are recieving data, wait before writing\n");
+
+        //if debugging, print and delay so print is visible 
+        if (nebula_debug) {
+            printf("we are recieving data, wait before writing\n");
+            nrf_delay_ms(1000);
+        }
+
+        //otherwise, just short delay and check again
         nrf_delay_ms(10);
     }
 
@@ -274,11 +283,9 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     trx_state = 1;
     chunk_ack = 0;
 
-    //printf("writing bytes\n");
-
+    // send all the packets over BLE
     int num_packets = ceil(len/(float)CHUNK_SIZE);
     char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
-
     for (int i = 0; i < num_packets; i++) {
 
         int len_for_write = 0;
@@ -306,12 +313,14 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         header->len = len_for_write;
         header->total_chunks = num_packets;
 
-        //print header information
-        //printf("write header i: %d\n", i);
-        // printf("type: %d\n", header->type);
-        // printf("chunk: %d\n", header->chunk);
-        // printf("len: %d\n", header->len);
-        // printf("total_chunks: %d\n", header->total_chunks);
+        //if debug, print header information
+        if (nebula_debug) {
+            printf("write header i: %d\n", i);
+            printf("type: %d\n", header->type);
+            printf("chunk: %d\n", header->chunk);
+            printf("len: %d\n", header->len);
+            printf("total_chunks: %d\n", header->total_chunks);
+        }
 
         //copy data into local buffer
         memcpy(local_buf + sizeof(struct ble_header), &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
@@ -325,8 +334,16 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
         //wait for ack saying number of packets recieved is same as sent
         while (chunk_ack != i+1) {
+            
+            //if debugging, print and delay so print is visible
+            if (nebula_debug) {
+                printf("waiting for ack from mule\n");
+                nrf_delay_ms(1000);
+            }
+
+            //otherwise, just short delay and check again
             nrf_delay_ms(10);
-            //printf("waiting for ack from mule\n");
+
         }
 
     }
@@ -338,9 +355,12 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     fin_header->len = 0x00;
     fin_header->total_chunks = 0x00;
 
-    //printf("write fin to mule\n");
-
+    //if debug, print fin message
+    if (nebula_debug) {
+        printf("write fin to mule\n");
+    }
     
+    //write fin to mule
     error_code = ble_write((char *)local_buf, sizeof(struct ble_header), &sensor_state_char, 0);
 
     //write is done, reset to listening
@@ -349,15 +369,17 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     return original_len;
 }
 
-int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
-
-    //printf("sensor called ble read long\n");
-
-    // If data has been received, the positive number of bytes received.
+/* reads big packets over BLE in chunks */
     // * \returns        \c 0 if the connection has been closed.
     // * \returns        If performing non-blocking I/O, \c MBEDTLS_ERR_SSL_WANT_READ
     // *                 must be returned when the operation would block.
     // * \returns        Another negative error code on other kinds of failures.
+int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
+
+    //if debugging, print read info
+    if (nebula_debug) {
+        printf("sensor called ble read long\n");
+    }
 
     // connection has been closed
     if (simple_ble_app->conn_handle == BLE_CONN_HANDLE_INVALID) {
@@ -368,34 +390,41 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
     // best happy case: we have data that's finished and available to copy
     if (trx_state == 0 && fin_buf_len > 0) { // we're in listening mode
 
+        //get copy len (either len or fin_buf_len, whichever is smaller) and copy data
         size_t copy_len = len > fin_buf_len ? fin_buf_len : len;
-        //printf("copy len: %d\n", copy_len);
-
         memcpy(buf, fin_buf, copy_len);
-        //printf("ble_read_long: read %d bytes, copied %d bytes\n", fin_buf_len, copy_len);
-        //nrf_delay_ms(1000);
-        fflush(stdout);
+        
+        //need?
+        //fflush(stdout);
 
         //clear data_buf state 
         fin_buf_len = 0;
-        //fin_buf_num_chunks = 0;
 
-        // printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
-        // for (int i = 0; i < copy_len; i++) {
-        //     printf("%02x ", buf[i]);
-        //     nrf_delay_ms(10);
-        //     fflush(stdout);
-        // }
-        // printf("\n\n\n");
+        //if debugging, print the buf contents
+        if (nebula_debug) {
+            printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
+            for (int i = 0; i < copy_len; i++) {
+                printf("%02x ", buf[i]);
+                nrf_delay_ms(10);
+                fflush(stdout);
+            }
+            printf("\n\n\n");
+        }
 
+        //return the length of the data read
         return copy_len;
     }
 
-    //printf("ble_read_long: no data available right now, returning SSL_WANT_READ\n");
+    //if debug, print that we're waiting for data
+    if (nebula_debug) {
+        printf("ble_read_long: no data available right now, returning SSL_WANT_READ\n");
+    }
+
+    // no data available right now, return SSL_WANT_READ handshake will be called again
     return MBEDTLS_ERR_SSL_WANT_READ;
 }
 
-// Function to send data over BLE
+/* Function to send data over BLE */
 int ble_write(unsigned char *buf, uint16_t len, simple_ble_char_t *characteristic, int offset) {
 
     // Check if BLE connection handle is valid
@@ -421,21 +450,23 @@ int ble_write(unsigned char *buf, uint16_t len, simple_ble_char_t *characteristi
     hvx_params.p_len = &len;
     hvx_params.p_data = buf;
 
-    //printf("Writing %d bytes to handle %d\n", len, hvx_params.handle);
-
     ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     while (ret_code != NRF_SUCCESS) {
-        //printf("Error writing try again: %d\n", ret_code);
+
+        //if debug, print error and delay so print is visible
+        if (nebula_debug) {
+            printf("Error writing try again: %d\n", ret_code);
+            nrf_delay_ms(1000);
+        }
+        
         nrf_delay_ms(10);
         ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     }
 
-    //printf("Wrote %d bytes to handle %d\n", len, hvx_params.handle);
-
     return ret_code;
 }
 
-// Function to receive data over BLE
+/* Function to receive data over BLE */ //TODO: remove this.
 int ble_read(simple_ble_char_t *characteristic) {
 
     int ret_code;
@@ -462,17 +493,13 @@ int ble_read(simple_ble_char_t *characteristic) {
     return ret_code;
 }
 
+/* Simple read and write test */
 void data_test(uint16_t ble_conn_handle) {
 
     printf("read and write data testing\n");
     int error_code;
     uint8_t test_buf [1000];
     uint8_t test_back [1000];
- 
-    // set the header data 
-    // data_buf[0] = 0x02;
-    // data_buf[1] = 0x00;
-    // data_buf[2] = 0x00;
 
     //make random data 1kB
     for (int i = 0; i < 1000; i++) {
@@ -493,17 +520,17 @@ void data_test(uint16_t ble_conn_handle) {
     }
 }
 
+/* mbedtls debug function */
 static void my_debug(void *ctx, int level,
                      const char *file, int line,
-                     const char *str)
-{
+                     const char *str) {
     ((void) level);
 
     mbedtls_fprintf((FILE *) ctx, "%s:%04d: %s", file, line, str);
     fflush((FILE *) ctx);
 }
 
-//dTLS timer functions 
+/* dTLS timer functions */
 struct dtls_delay_ctx {
     uint32_t int_ms;
     uint32_t fin_ms;
@@ -565,6 +592,8 @@ int dtls_get_delay(void *data) {
     return 0; 
 }
 
+
+/* The core of it all! */
 int main(void) {
 
     //setup error code
@@ -595,7 +624,6 @@ int main(void) {
     unsigned char client_ip[16] = { 0 };
     size_t cliip_len;
     mbedtls_ssl_cookie_ctx cookie_ctx;
-
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_context ssl;
@@ -606,7 +634,6 @@ int main(void) {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_cookie_init(&cookie_ctx);
-
     mbedtls_x509_crt_init(&srvcert);
     mbedtls_pk_init(&pkey);
     mbedtls_entropy_init(&entropy);
@@ -639,8 +666,9 @@ int main(void) {
      * 2. Load the certificates and private RSA key
      */
     printf("Loading the server cert. and key...\n");
-    printf("size of cert: %d\n", strlen(sensor_srv_cert));
-    printf("size of key: %d\n", strlen(sensor_srv_key));
+    //printf("size of cert: %d\n", strlen(sensor_srv_cert));
+    //printf("size of key: %d\n", strlen(sensor_srv_key));
+    //TODO: move to EC if time permits
 
     const unsigned char *cert_data = sensor_cli_crt; 
     ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cert_data,
@@ -665,8 +693,6 @@ int main(void) {
 
     printf(" ok\n");
 
-    //TODO: I skipped setting up the listening UDP port since it's not needed in BLE dTLS
-
     /*
      * 4. Setup DTLS stuff
      */
@@ -685,10 +711,9 @@ int main(void) {
     fflush(stdout);
 
     //setup debug
-    
     mbedtls_debug_set_threshold(DEBUG_LEVEL);
     mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
-
+    //more setup...
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
     printf("ssl conf ca chain...\n");
@@ -709,6 +734,7 @@ int main(void) {
         
     }
 
+    // TODO: consider adding cookies back for verify...
     // printf("ssl conf dtls cookies...\n");
     // fflush(stdout);
     // mbedtls_ssl_conf_dtls_cookies(&conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
@@ -728,11 +754,9 @@ int main(void) {
 
     printf(" ok\n");
 
-    //reset: TODO???
+    //reset: TODO??
 
     mbedtls_ssl_session_reset(&ssl);
-
-    //TODO: I skipped the wait until a client connects and client ID cause that's not needed
 
     
     /*
@@ -743,7 +767,6 @@ int main(void) {
     /*
     * BLE initialization
     */
-
     simple_ble_add_service(&sensor_service);
  
     simple_ble_add_characteristic(1, 1, 1, 1,
@@ -778,7 +801,6 @@ int main(void) {
     /*
     * MBEDTLS handshake
     */
-////////////////////////////////////////////////////////////////////////////////////////
     
     //Set bio to call ble connection TODO: 
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
@@ -793,38 +815,26 @@ int main(void) {
     printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
-        //try again  
-        nrf_delay_ms(10);
-        //printf("mbedtls_handshake returning %x... trying again\n", ret);
 
-        char error_buf[100];
-        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
-        //printf("SSL/TLS handshake error: %s\n", error_buf);
-        
+        //if debug, print and delay
+        if (nebula_debug) {
+            printf("mbedtls_handshake returning %x... trying again\n", ret);
+            nrf_delay_ms(1000);
+            char error_buf[100];
+            mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+            printf("SSL/TLS handshake error: %s\n", error_buf);
+            fflush(stdout);
+        }
+
+        //try again
         ret = mbedtls_ssl_handshake(&ssl);
-        fflush(stdout);
+        nrf_delay_ms(10);
     }
 
+    //stop the timer
     uint32_t end = app_timer_cnt_get();
-
     uint32_t hs_time = app_timer_cnt_diff_compute(end, start);
-
     printf("mbedtls handshake successful, seconds: %f\n", (hs_time / (float)APP_TIMER_CLOCK_FREQ));
-    
-    // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
-    //          ret == MBEDTLS_ERR_SSL_WANT_WRITE );
-
-    // if( ret != 0 )
-    // {
-    //     mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
-    //     char error_buf[100];
-    //     mbedtls_strerror(ret, error_buf, sizeof(error_buf));
-    //     printf("SSL/TLS handshake error: %s\n", error_buf);
-    //     //abort();
-    // }
-    // else {
-    //     printf("mbedtls handshake successful\n");
-    // }
 
 
     //TODO: actually send data encrypted over mbedtls
