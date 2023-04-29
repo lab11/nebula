@@ -42,7 +42,7 @@
 #define CHUNK_SIZE 200
 #define READ_TIMEOUT_MS 60000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
-#define DEBUG_LEVEL 4
+#define DEBUG_LEVEL 0
 
 #define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
 #define MBEDTLS_SSL_HS_TIMEOUT_MAX 100000
@@ -133,8 +133,8 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 
     //Check if data is mule or data and store it
     if (p_ble_evt->evt.gatts_evt.params.write.handle == mule_state_char.char_handle.value_handle) {
-        printf("Data from Mule recieved!\n");
-        printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
+        //printf("Data from Mule recieved!\n");
+        //printf("Data length: %d\n", p_ble_evt->evt.gatts_evt.params.write.len);
         //copy recieved data into local buffer 
         memcpy(local_buf, p_ble_evt->evt.gatts_evt.params.write.data, p_ble_evt->evt.gatts_evt.params.write.len);
 
@@ -185,7 +185,7 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             }
 
             //recieving an ack! 
-            printf("Got an ack for chunk %d\n", header->chunk);
+            //printf("Got an ack for chunk %d\n", header->chunk);
 
             //check if ack is for the right chunk
             if (header->chunk != chunk_ack) {
@@ -199,8 +199,8 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         }
         else if (header->type == 0x02) { // mule is sending a fin
             // we're done go back to listening
-            printf("Got a fin from mule\n");
-            printf("final data_buf_len: %d\n", data_buf_len);
+            //printf("Got a fin from mule\n");
+            //printf("final data_buf_len: %d\n", data_buf_len);
 
             // put the buffer in fin_buf and reset data_buf 
             memcpy(fin_buf, data_buf, data_buf_len);
@@ -234,7 +234,7 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
 {
-    printf("sensor called ble write long\n");
+    //printf("sensor called ble write long\n");
 
     int error_code = 0;
     int original_len = len;
@@ -247,15 +247,15 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
     //sanity check we are in listening state
     while (trx_state != 0) {
-        printf("we are recieving data, wait before writing\n");
-        nrf_delay_ms(1000);
+        //printf("we are recieving data, wait before writing\n");
+        nrf_delay_ms(10);
     }
 
     //set to writing state and set chunks to 0
     trx_state = 1;
     chunk_ack = 0;
 
-    printf("writing bytes\n");
+    //printf("writing bytes\n");
 
     int num_packets = ceil(len/(float)CHUNK_SIZE);
     char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
@@ -288,11 +288,11 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         header->total_chunks = num_packets;
 
         //print header information
-        printf("write header i: %d\n", i);
-        printf("type: %d\n", header->type);
-        printf("chunk: %d\n", header->chunk);
-        printf("len: %d\n", header->len);
-        printf("total_chunks: %d\n", header->total_chunks);
+        //printf("write header i: %d\n", i);
+        // printf("type: %d\n", header->type);
+        // printf("chunk: %d\n", header->chunk);
+        // printf("len: %d\n", header->len);
+        // printf("total_chunks: %d\n", header->total_chunks);
 
         //copy data into local buffer
         memcpy(local_buf + sizeof(struct ble_header), &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
@@ -306,8 +306,8 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
         //wait for ack saying number of packets recieved is same as sent
         while (chunk_ack != i+1) {
-            nrf_delay_ms(1000);
-            printf("waiting for ack from mule\n");
+            nrf_delay_ms(10);
+            //printf("waiting for ack from mule\n");
         }
 
     }
@@ -319,7 +319,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     fin_header->len = 0x00;
     fin_header->total_chunks = 0x00;
 
-    printf("write fin to mule\n");
+    //printf("write fin to mule\n");
 
     
     error_code = ble_write((char *)local_buf, sizeof(struct ble_header), &sensor_state_char, 0);
@@ -332,7 +332,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
 
 int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
-    printf("sensor called ble read long\n");
+    //printf("sensor called ble read long\n");
 
     // If data has been received, the positive number of bytes received.
     // * \returns        \c 0 if the connection has been closed.
@@ -352,8 +352,8 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         size_t copy_len = len > fin_buf_len ? fin_buf_len : len;
 
         memcpy(buf, fin_buf, copy_len);
-        printf("ble_read_long: read %d bytes, copied %d bytes\n", fin_buf_len, copy_len);
-        nrf_delay_ms(1000);
+        //printf("ble_read_long: read %d bytes, copied %d bytes\n", fin_buf_len, copy_len);
+        //nrf_delay_ms(1000);
         fflush(stdout);
 
         //clear data_buf state 
@@ -371,7 +371,7 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
         return copy_len;
     }
 
-    printf("ble_read_long: no data available right now, returning SSL_WANT_READ\n");
+    //printf("ble_read_long: no data available right now, returning SSL_WANT_READ\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
 }
 
@@ -401,16 +401,16 @@ int ble_write(unsigned char *buf, uint16_t len, simple_ble_char_t *characteristi
     hvx_params.p_len = &len;
     hvx_params.p_data = buf;
 
-    printf("Writing %d bytes to handle %d\n", len, hvx_params.handle);
+    //printf("Writing %d bytes to handle %d\n", len, hvx_params.handle);
 
     ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     while (ret_code != NRF_SUCCESS) {
-        printf("Error writing try again: %d\n", ret_code);
-        nrf_delay_ms(1000);
+        //printf("Error writing try again: %d\n", ret_code);
+        nrf_delay_ms(10);
         ret_code = sd_ble_gatts_hvx(simple_ble_app->conn_handle, &hvx_params);
     }
 
-    printf("Wrote %d bytes to handle %d\n", len, hvx_params.handle);
+    //printf("Wrote %d bytes to handle %d\n", len, hvx_params.handle);
 
     return ret_code;
 }
@@ -746,8 +746,8 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
-    printf("BLE connected, waiting 7 seconds...\n");
-    nrf_delay_ms(7000);
+    printf("BLE connected, waiting 1 seconds...\n");
+    nrf_delay_ms(1000);
 
     //printf("BLE connected, start mbedtls handshake\n");
 
@@ -771,12 +771,12 @@ int main(void) {
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
         //try again  
-        nrf_delay_ms(3000);
-        printf("mbedtls_handshake returning %x... trying again\n", ret);
+        nrf_delay_ms(100);
+        //printf("mbedtls_handshake returning %x... trying again\n", ret);
 
         char error_buf[100];
         mbedtls_strerror(ret, error_buf, sizeof(error_buf));
-        printf("SSL/TLS handshake error: %s\n", error_buf);
+        //printf("SSL/TLS handshake error: %s\n", error_buf);
         
         ret = mbedtls_ssl_handshake(&ssl);
         fflush(stdout);
