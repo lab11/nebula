@@ -40,9 +40,12 @@
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
 #define CHUNK_SIZE 200
-#define READ_TIMEOUT_MS 30000   /* 10 seconds */
+#define READ_TIMEOUT_MS 60000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
 #define DEBUG_LEVEL 4
+
+#define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
+#define MBEDTLS_SSL_HS_TIMEOUT_MAX 100000
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -93,6 +96,9 @@ uint8_t data_buf[READ_BUF_SIZE];
 uint32_t data_buf_len = 0;
 uint8_t data_buf_num_chunks = 0;
 uint8_t trx_state = 0;  // 0-listening,1-writing,2-recieving
+
+uint8_t fin_buf[READ_BUF_SIZE*2];
+uint32_t fin_buf_len = 0;
 
 uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
 
@@ -195,9 +201,13 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             // we're done go back to listening
             printf("Got a fin from mule\n");
             printf("final data_buf_len: %d\n", data_buf_len);
-            #if defined(MBEDTLS_SSL_PROTO_DTLS)
-            printf("TEST PROTO DTLS\n");
-            #endif
+
+            // put the buffer in fin_buf and reset data_buf 
+            memcpy(fin_buf, data_buf, data_buf_len);
+            fin_buf_len = data_buf_len;
+            data_buf_len = 0;
+            data_buf_num_chunks = 0;
+
             //print the data buf 
             // printf("data_buf at fin: (%d)\n", data_buf_len);
             // for (uint32_t i = 0; i < data_buf_len; i++) {
@@ -337,18 +347,18 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
     }
 
     // best happy case: we have data that's finished and available to copy
-    if (trx_state == 0 && data_buf_len > 0) { // we're in listening mode
+    if (trx_state == 0 && fin_buf_len > 0) { // we're in listening mode
 
-        size_t copy_len = len > data_buf_len ? data_buf_len : len;
+        size_t copy_len = len > fin_buf_len ? fin_buf_len : len;
 
-        memcpy(buf, data_buf, copy_len);
-        printf("ble_read_long: read %d bytes, copied %d bytes\n", data_buf_len, copy_len);
+        memcpy(buf, fin_buf, copy_len);
+        printf("ble_read_long: read %d bytes, copied %d bytes\n", fin_buf_len, copy_len);
         nrf_delay_ms(1000);
         fflush(stdout);
 
         //clear data_buf state 
-        data_buf_len = 0;
-        data_buf_num_chunks = 0;
+        fin_buf_len = 0;
+        //fin_buf_num_chunks = 0;
 
         // printf("\n\n\n READ BUFFER CONTENTS (%d):\n", copy_len);
         // for (int i = 0; i < copy_len; i++) {
@@ -609,8 +619,10 @@ int main(void) {
      * 2. Load the certificates and private RSA key
      */
     printf("Loading the server cert. and key...\n");
+    printf("size of cert: %d\n", strlen(sensor_srv_cert));
+    printf("size of key: %d\n", strlen(sensor_srv_key));
 
-    const unsigned char *cert_data = sensor_cli_crt; //TODO: change name to sensor_svr_crt
+    const unsigned char *cert_data = sensor_cli_crt; 
     ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cert_data,
                                  sensor_cli_crt_len);
     if (ret != 0) {
@@ -677,10 +689,10 @@ int main(void) {
         
     }
 
-    printf("ssl conf dtls cookies...\n");
-    fflush(stdout);
-    mbedtls_ssl_conf_dtls_cookies(&conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
-                                  &cookie_ctx);
+    // printf("ssl conf dtls cookies...\n");
+    // fflush(stdout);
+    // mbedtls_ssl_conf_dtls_cookies(&conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
+    //                               &cookie_ctx);
 
     printf("ssl setup...\n");
     fflush(stdout);
@@ -751,13 +763,21 @@ int main(void) {
     //Set bio to call ble connection TODO: 
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
+    mbedtls_ssl_conf_handshake_timeout(&conf, MBEDTLS_SSL_HS_TIMEOUT_MIN,
+                                    MBEDTLS_SSL_HS_TIMEOUT_MAX);
+
     // handshake
     printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
         //try again  
-        nrf_delay_ms(1000);
+        nrf_delay_ms(3000);
         printf("mbedtls_handshake returning %x... trying again\n", ret);
+
+        char error_buf[100];
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        printf("SSL/TLS handshake error: %s\n", error_buf);
+        
         ret = mbedtls_ssl_handshake(&ssl);
         fflush(stdout);
     }

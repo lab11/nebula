@@ -73,7 +73,9 @@ static const ble_uuid_t *mule_chr_uuid = BLE_UUID128_DECLARE(
 
 #define CHUNK_SIZE 200
 #define MAX_PAYLOADS 1
-#define READ_TIMEOUT_MS 3000
+#define READ_TIMEOUT_MS 60000
+#define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
+#define MBEDTLS_SSL_HS_TIMEOUT_MAX 100000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11" // TODO??
 #define READ_BUF_SIZE 1024
@@ -129,6 +131,9 @@ uint8_t data_buf[READ_BUF_SIZE];
 uint32_t data_buf_len = 0;
 uint8_t data_buf_num_chunks = 0;
 uint8_t trx_state = 0;  // 0-listening,1-writing,2-recieving
+
+uint8_t fin_buf[READ_BUF_SIZE*2];
+uint32_t fin_buf_len = 0;
 
 uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
 
@@ -228,6 +233,10 @@ static void ble_read(const struct peer *peer, struct peer_chr *chr) {
 
 static void ble_write(const struct peer *peer, char *buf, const struct peer_chr *chr, size_t len) {
     int rc;
+
+    //peer information
+    printf("peer address: %d\n", peer->conn_handle);
+    printf("char handle: %d\n", chr->chr.val_handle);
 
     printf("in ble_write\n");
 
@@ -419,16 +428,16 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
     }
 
     // best happy case: we have data that's finished and available to copy
-    if (trx_state == 0 && data_buf_len > 0) {
+    if (trx_state == 0 && fin_buf_len > 0) {
 
-        size_t copy_len = len > data_buf_len ? data_buf_len : len;
+        size_t copy_len = len > fin_buf_len ? fin_buf_len : len;
 
-        memcpy(buf, data_buf, copy_len);
-        printf("ble_read_long: read %ld bytes, copied %d bytes\n", data_buf_len, copy_len);
+        memcpy(buf, fin_buf, copy_len);
+        printf("ble_read_long: read %ld bytes, copied %d bytes\n", fin_buf_len, copy_len);
 
         //clear data_buf state 
-        data_buf_len = 0;
-        data_buf_num_chunks = 0;
+        fin_buf_len = 0;
+        //fin_buf_num_chunks = 0;
 
         return copy_len;
     }
@@ -729,19 +738,19 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
             if (header->type == 0x00) { // sensor is sending payload
                 //check if we were writing (bad times)
                 if (trx_state == 1) {
-                    printf("Mule is sending a payload while we are writing\n");
+                    printf("Sensor is sending a payload while we are writing\n");
                     return -1;
                 }
 
                 //check we're ready to get more data 
                 if (trx_state == 0 && data_buf_len != 0) {
-                    printf("Mule is trying to send a new payload while our data buffer has content\n");
+                    printf("Sensor is trying to send a new payload while our data buffer has content\n");
                     return -1;
                 }
                 
                 //sanity check on chunk number
                 if (header->chunk != data_buf_num_chunks) {
-                    printf("Mule is sending a payload with the wrong chunk number\n");
+                    printf("Sensor is sending a payload with the wrong chunk number\n");
                     return -1;
                 }
                 
@@ -784,7 +793,12 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
             }
             else if (header->type == 0x02) { // sensor is sending a fin
                 // we're done go back to listening
-                printf("Sensor is sending a fin\n");
+                printf("Got a fin from sensor\n");
+                memcpy(fin_buf, data_buf, data_buf_len);
+                fin_buf_len = data_buf_len;
+                data_buf_len = 0;
+                data_buf_num_chunks = 0;
+
                 trx_state = 0;
             }
             
@@ -900,24 +914,36 @@ void mbedtls_stuff() {
     // Set bio to call ble connection
     mbedtls_ssl_set_bio(&ssl, ble_conn_handle, ble_write_long, ble_read_long, NULL);
 
+    
+
     mbedtls_ssl_set_timer_cb(&ssl, &timer, mbedtls_timing_set_delay,
                               mbedtls_timing_get_delay);
+
+    mbedtls_ssl_conf_handshake_timeout(&conf, MBEDTLS_SSL_HS_TIMEOUT_MIN,
+                                        MBEDTLS_SSL_HS_TIMEOUT_MAX);
 
 
     //TODO don't handshake while ble unconnected
 
     //Handshake 
+    printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
-    if (ret != 0) {
-        printf("error at line %d: mbedtls_ssl_handshake returned %d\n", __LINE__, ret);
+    while (ret != 0) {
+        //try handshake again delay
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        printf("mbedtls_ssl_handshake returned %d\n", ret);
+        
         char error_buf[100];
         mbedtls_strerror(ret, error_buf, sizeof(error_buf));
         printf("SSL/TLS handshake error: %s\n", error_buf);
-         //abort();
+        
+        ret = mbedtls_ssl_handshake(&ssl);
+        fflush(stdout);
     }
-    else {
-        printf("mbedtls handshake successful\n");
-    }
+
+    
+    printf("mbedtls handshake successful\n");
+    
 
     while(true) {
         //wait for data
