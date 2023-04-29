@@ -18,7 +18,6 @@
 #include "nrf_drv_rng.h"
 #include "nrf_drv_timer.h"
 #include "simple_ble.h"
-//#include "mbedtls/config.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
@@ -36,8 +35,7 @@
 #include "certs.h"
 #include "data.h"
 
-
-// Pin definitions
+// Definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
 #define CHUNK_SIZE 495
 #define READ_TIMEOUT_MS 60000   /* 10 seconds */
@@ -792,12 +790,6 @@ int main(void) {
     printf("BLE connected...\n");
     nrf_delay_ms(1000);
 
-    //printf("BLE connected, start mbedtls handshake\n");
-
-    //Read and write test
-    //data_test(ble_conn_handle);
-    //read test 
-
     /*
     * MBEDTLS handshake
     */
@@ -838,6 +830,61 @@ int main(void) {
 
 
     //TODO: actually send data encrypted over mbedtls
+
+/*
+     * 6. Read the echo Request
+     */
+    printf("  < Read from client:");
+    fflush(stdout);
+
+    len = sizeof(buf) - 1;
+    memset(buf, 0, sizeof(buf));
+
+    do {
+        ret = mbedtls_ssl_read(&ssl, buf, len);
+    } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+             ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+    if (ret <= 0) {
+        switch (ret) {
+            case MBEDTLS_ERR_SSL_TIMEOUT:
+                printf(" timeout\n\n");
+                //goto reset;
+
+            case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+                printf(" connection was closed gracefully\n");
+                ret = 0;
+                //goto close_notify;
+
+            default:
+                printf(" mbedtls_ssl_read returned -0x%x\n\n", (unsigned int) -ret);
+                //goto reset;
+        }
+    }
+
+    len = ret;
+    printf(" %d bytes read\n\n%s\n\n", len, buf);
+
+    /*
+     * 7. Write the 200 Response
+     */
+    printf("  > Write to client:");
+    fflush(stdout);
+
+    do {
+        ret = mbedtls_ssl_write(&ssl, buf, len);
+    } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+             ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+    if (ret < 0) {
+        printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+        //goto exit;
+    }
+
+    len = ret;
+    printf(" %d bytes written\n\n%s\n\n", len, buf);
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
