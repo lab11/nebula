@@ -39,7 +39,7 @@
 
 // Pin definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
-#define CHUNK_SIZE 200
+#define CHUNK_SIZE 495
 #define READ_TIMEOUT_MS 60000   /* 10 seconds */
 #define READ_BUF_SIZE 1024
 #define DEBUG_LEVEL 0
@@ -84,7 +84,7 @@ int ble_write(unsigned char *buf, uint16_t len, simple_ble_char_t *characteristi
 struct ble_header {
     uint8_t type;
     uint8_t chunk;
-    uint8_t len;
+    uint32_t len;
     uint8_t total_chunks; 
 };
 
@@ -122,11 +122,22 @@ int entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
     return 0;
 }
 
+void ble_evt_connected(ble_evt_t const * p_ble_evt) {
+    printf("Connected!\n");
+    //set conn_handle
+    //printf("connection mtu%d\n", p_ble_evt->evt.gap_evt.params.mtu_exchaged.mtu);
+    //printf("")
+}
+
 void ble_evt_write(ble_evt_t const * p_ble_evt) { 
+
+    //print("mtu exchanged %d\n", p_ble_evt->evt.gatts_evt.params.mtu_exchanged.mtu);
+
     // Check if the event if on the link for this central
     if (p_ble_evt->evt.gatts_evt.conn_handle != simple_ble_app->conn_handle) {
         return;
     }
+
 
     //create a local buffer to store data
     char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
@@ -166,6 +177,11 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
             data_buf_len += header->len;
             data_buf_num_chunks += 1;
 
+            // //print data_buf_len
+            // printf("data_buf_len right after recieve: %d\n", data_buf_len);
+            // printf("chunk number: %d\n", header->chunk);
+            // printf("data_buf_num_chunks right after recieve: %d\n", data_buf_num_chunks);
+
             //send ack 
             struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
             ble_write((unsigned char *) &ack_header, sizeof(struct ble_header), &sensor_state_char, 0);
@@ -199,14 +215,17 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
         }
         else if (header->type == 0x02) { // mule is sending a fin
             // we're done go back to listening
-            //printf("Got a fin from mule\n");
-            //printf("final data_buf_len: %d\n", data_buf_len);
+
 
             // put the buffer in fin_buf and reset data_buf 
             memcpy(fin_buf, data_buf, data_buf_len);
             fin_buf_len = data_buf_len;
             data_buf_len = 0;
             data_buf_num_chunks = 0;
+
+            // printf("Got a fin from mule\n");
+            // printf("data_buf_len: %d\n", data_buf_len);
+            // printf("fin_buf_len: %d\n", fin_buf_len);
 
             //print the data buf 
             // printf("data_buf at fin: (%d)\n", data_buf_len);
@@ -350,6 +369,7 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
     if (trx_state == 0 && fin_buf_len > 0) { // we're in listening mode
 
         size_t copy_len = len > fin_buf_len ? fin_buf_len : len;
+        //printf("copy len: %d\n", copy_len);
 
         memcpy(buf, fin_buf, copy_len);
         //printf("ble_read_long: read %d bytes, copied %d bytes\n", fin_buf_len, copy_len);
@@ -746,7 +766,7 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
-    printf("BLE connected, waiting 1 seconds...\n");
+    printf("BLE connected...\n");
     nrf_delay_ms(1000);
 
     //printf("BLE connected, start mbedtls handshake\n");
@@ -766,12 +786,15 @@ int main(void) {
     mbedtls_ssl_conf_handshake_timeout(&conf, MBEDTLS_SSL_HS_TIMEOUT_MIN,
                                     MBEDTLS_SSL_HS_TIMEOUT_MAX);
 
+    //start a timer for the handshake
+    uint32_t start = app_timer_cnt_get();
+
     // handshake
     printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
         //try again  
-        nrf_delay_ms(100);
+        nrf_delay_ms(10);
         //printf("mbedtls_handshake returning %x... trying again\n", ret);
 
         char error_buf[100];
@@ -781,20 +804,27 @@ int main(void) {
         ret = mbedtls_ssl_handshake(&ssl);
         fflush(stdout);
     }
+
+    uint32_t end = app_timer_cnt_get();
+
+    uint32_t hs_time = app_timer_cnt_diff_compute(end, start);
+
+    printf("mbedtls handshake successful, seconds: %f\n", (hs_time / (float)APP_TIMER_CLOCK_FREQ));
+    
     // while( ret == MBEDTLS_ERR_SSL_WANT_READ ||
     //          ret == MBEDTLS_ERR_SSL_WANT_WRITE );
 
-    if( ret != 0 )
-    {
-        mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
-        char error_buf[100];
-        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
-        printf("SSL/TLS handshake error: %s\n", error_buf);
-        //abort();
-    }
-    else {
-        printf("mbedtls handshake successful\n");
-    }
+    // if( ret != 0 )
+    // {
+    //     mbedtls_printf( " failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", (unsigned int) -ret );
+    //     char error_buf[100];
+    //     mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+    //     printf("SSL/TLS handshake error: %s\n", error_buf);
+    //     //abort();
+    // }
+    // else {
+    //     printf("mbedtls handshake successful\n");
+    // }
 
 
     //TODO: actually send data encrypted over mbedtls

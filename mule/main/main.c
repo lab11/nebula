@@ -71,7 +71,7 @@ static const ble_uuid_t *mule_chr_uuid = BLE_UUID128_DECLARE(
     0xB5, 0x4D, 0x22, 0x2B, 0x12, 0x89, 0xE6, 0x32
 );
 
-#define CHUNK_SIZE 200
+#define CHUNK_SIZE 495
 #define MAX_PAYLOADS 1
 #define READ_TIMEOUT_MS 60000
 #define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
@@ -119,7 +119,7 @@ uint8_t *read_buf = NULL;
 struct ble_header {
     uint8_t type;
     uint8_t chunk;
-    uint8_t len;
+    uint32_t len;
     uint8_t total_chunks; 
 };
 
@@ -350,7 +350,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     int num_packets = ceil(len/(float)CHUNK_SIZE);
     char local_buf[CHUNK_SIZE+sizeof(struct ble_header)];
 
-    //printf("num packets: %d\n", num_packets);
+    printf("num packets: %d\n", num_packets);
 
     for (int i = 0; i < num_packets; i++) {
         // //make and copy header into local buffer
@@ -383,6 +383,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         header->total_chunks = num_packets;
 
         //printf("len_for_write: %d\n", len_for_write);
+        //printf("len: %d\n", len);
 
         //copy data into local buffer
         memcpy(local_buf + sizeof(struct ble_header), &buf[i*CHUNK_SIZE], len_for_write); //copy data into local buffer
@@ -408,7 +409,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     ble_write(peer, (char *)local_buf, chr_mule, sizeof(struct ble_header));
 
     //printf("write fin to sensor\n");
-    //printf("final data_buf_len: %d\n", data_buf_len);
+    //printf("final data_buf_len: %ld\n", data_buf_len);
 
     //write is done, reset to listening 
     trx_state = 0;
@@ -781,6 +782,7 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                 }
 
                 //recieving an ack! 
+                printf("Got an ack for chunk %d\n", header->chunk);
 
                 //check if ack is for the right chunk
                 if (header->chunk != chunk_ack) {
@@ -1343,7 +1345,7 @@ void app_main() {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
-    printf("BLE connected, waiting 5 seconds...\n");
+    printf("BLE connected...\n");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
    
