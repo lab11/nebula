@@ -930,6 +930,13 @@ void mbedtls_stuff() {
     len = ret;
     mbedtls_printf(" %d bytes read\n\n%s\n\n", len, buf);
 
+    //print each byte of final packet
+    printf("Encrypted payload: ");
+    for (size_t i = 0; i < len; i++)
+    {
+        printf("%02x ", buf[i]);
+    }
+    printf("\n");
 
 
 

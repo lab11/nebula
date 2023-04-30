@@ -8,7 +8,7 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
     nrf_crypto_aes_context_t aes_ctx;
 
     // Initialize AES-128 GCM context
-    ret_val = nrf_crypto_aes_init(&aes_ctx, &g_nrf_crypto_aes_gcm_128_info, NRF_CRYPTO_ENCRYPT);
+    ret_val = nrf_crypto_aes_init(&aes_ctx, &g_nrf_crypto_aes_gcm_256_info, NRF_CRYPTO_ENCRYPT);
     if (ret_val != NRF_SUCCESS)
     {
         printf("Failed to initialize AES context. Error: 0x%x\n", ret_val);
@@ -31,7 +31,7 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *iv, const uint8_
         return;
     }
 
-    // Encrypt the plaintext using AES-128 GCM
+    // Encrypt the plaintext using AES-256 GCM
     uint8_t ciphertext[length];
     ret_val = nrf_crypto_aes_update(&aes_ctx, plaintext, length, ciphertext);
     if (ret_val != NRF_SUCCESS)

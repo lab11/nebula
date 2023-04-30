@@ -34,6 +34,7 @@
 #include "ble.h"
 #include "certs.h"
 #include "data.h"
+#include "aes_gcm.h"
 
 // Definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
@@ -664,9 +665,6 @@ int main(void) {
      * 2. Load the certificates and private RSA key
      */
     printf("Loading the server cert. and key...\n");
-    //printf("size of cert: %d\n", strlen(sensor_cli_crt));
-    //printf("size of key: %d\n", strlen(sensor_cli_key));
-    //TODO: move to EC if time permits
 
     const unsigned char *cert_data = nebula_srv_crt_ec; 
     ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cert_data,
@@ -872,6 +870,43 @@ int main(void) {
 
     len = ret;
     printf(" %d bytes read\n\n%s\n\n", len, buf);
+
+
+
+    /* encrypt the data packet to write  */
+
+    uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: change ahhh
+    uint8_t iv[NRF_CRYPTO_AES_IV_SIZE] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+                                          0xA8, 0xA9, 0xAA, 0xAB};
+
+    uint8_t plaintext[] = "Your message here!";
+    size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
+    size_t payload_length = NRF_CRYPTO_AES_IV_SIZE + length + NRF_CRYPTO_AES_IV_SIZE;
+    uint8_t payload[payload_length];
+
+    // Encrypt the character array
+    //encrypt_character_array(key, iv, plaintext, payload, length);
+
+    // Print the encrypted payload
+    printf("Encrypted payload: ");
+    for (size_t i = 0; i < payload_length; i++)
+    {
+        printf("%02x", payload[i]);
+    }
+    printf("\n");
+
+    //copy into buf 
+    memcpy(buf, payload, payload_length);
+
+    printf("length of buf: %d\n", sizeof(buf));
+    printf("len: %d\n", len);
+    printf("length of payload: %d\n", payload_length);
+
+    len = payload_length;
+
 
     /*
      * 7. Write the 200 Response
