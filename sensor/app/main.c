@@ -38,12 +38,12 @@
 // Definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
 #define CHUNK_SIZE 495
-#define READ_TIMEOUT_MS 60000   /* 10 seconds */
-#define READ_BUF_SIZE 1024
+#define READ_TIMEOUT_MS 200000   /* 10 seconds */
+#define READ_BUF_SIZE 4096
 #define DEBUG_LEVEL 0
 
-#define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
-#define MBEDTLS_SSL_HS_TIMEOUT_MAX 100000
+#define MBEDTLS_SSL_HS_TIMEOUT_MIN 200000
+#define MBEDTLS_SSL_HS_TIMEOUT_MAX 400000
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -664,22 +664,30 @@ int main(void) {
      * 2. Load the certificates and private RSA key
      */
     printf("Loading the server cert. and key...\n");
-    //printf("size of cert: %d\n", strlen(sensor_srv_cert));
-    //printf("size of key: %d\n", strlen(sensor_srv_key));
+    printf("size of cert: %d\n", strlen(sensor_cli_crt));
+    printf("size of key: %d\n", strlen(sensor_cli_key));
     //TODO: move to EC if time permits
 
-    const unsigned char *cert_data = sensor_cli_crt; 
+    const unsigned char *cert_data = nebula_srv_crt; 
     ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cert_data,
-                                 sensor_cli_crt_len);
+                                 strlen(nebula_srv_crt)+1);
     if (ret != 0) {
         printf("failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
        
     }
 
-    const unsigned char *key_data = sensor_cli_key;
+    const unsigned char *cas_pem = nebula_ca_crt;
+    ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cas_pem,
+                                 strlen(nebula_ca_crt)+1);
+    if (ret != 0) {
+        printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
+        
+    }
+
+    const unsigned char *key_data = nebula_srv_key;
     ret =  mbedtls_pk_parse_key(&pkey,
                                 (const unsigned char *) key_data,
-                                sensor_cli_key_len,
+                                strlen(nebula_srv_key)+1,
                                 NULL,
                                 0,
                                 mbedtls_ctr_drbg_random,

@@ -38,12 +38,12 @@
 // Definitions
 #define CHUNK_SIZE 495
 #define MAX_PAYLOADS 1
-#define READ_TIMEOUT_MS 60000
-#define MBEDTLS_SSL_HS_TIMEOUT_MIN 70000
-#define MBEDTLS_SSL_HS_TIMEOUT_MAX 100000
+#define READ_TIMEOUT_MS 200000
+#define MBEDTLS_SSL_HS_TIMEOUT_MIN 200000
+#define MBEDTLS_SSL_HS_TIMEOUT_MAX 400000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11" 
-#define READ_BUF_SIZE 1024
+#define READ_BUF_SIZE 4096
 #define DEBUG_LEVEL 0
 #define NEBULA_SVC_UUID 0x180A // This is the UUID for the Nebula service (also apparently the default LOL TODO: change this)
 #define MESSAGE     "Echo this"
