@@ -664,13 +664,13 @@ int main(void) {
      * 2. Load the certificates and private RSA key
      */
     printf("Loading the server cert. and key...\n");
-    printf("size of cert: %d\n", strlen(sensor_cli_crt));
-    printf("size of key: %d\n", strlen(sensor_cli_key));
+    //printf("size of cert: %d\n", strlen(sensor_cli_crt));
+    //printf("size of key: %d\n", strlen(sensor_cli_key));
     //TODO: move to EC if time permits
 
-    const unsigned char *cert_data = nebula_srv_crt; 
+    const unsigned char *cert_data = nebula_srv_crt_ec; 
     ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cert_data,
-                                 strlen(nebula_srv_crt)+1);
+                                 strlen(nebula_srv_crt_ec)+1);
     if (ret != 0) {
         printf("failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
        
@@ -684,10 +684,10 @@ int main(void) {
         
     }
 
-    const unsigned char *key_data = nebula_srv_key;
+    const unsigned char *key_data = nebula_srv_key_ec;
     ret =  mbedtls_pk_parse_key(&pkey,
                                 (const unsigned char *) key_data,
-                                strlen(nebula_srv_key)+1,
+                                strlen(nebula_srv_key_ec)+1,
                                 NULL,
                                 0,
                                 mbedtls_ctr_drbg_random,

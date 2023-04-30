@@ -34,6 +34,7 @@
 #include "time.h"
 #include "backhaul.h"
 #include "util.h"
+#include "certs.h"
 
 // Definitions
 #define CHUNK_SIZE 495
@@ -747,6 +748,7 @@ void mbedtls_stuff() {
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
+    mbedtls_x509_crt cacert;
     mbedtls_timing_delay_context timer;
 
     /*
@@ -754,6 +756,7 @@ void mbedtls_stuff() {
      */
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
+    mbedtls_x509_crt_init(&cacert);
     mbedtls_ctr_drbg_init(&ctr_drbg);
 
     mbedtls_printf("\n  . Seeding the random number generator...");
@@ -768,6 +771,18 @@ void mbedtls_stuff() {
     }
 
     mbedtls_printf(" ok\n");
+
+    mbedtls_printf("  . Loading the CA root certificate ...");
+    
+    const unsigned char *cas_pem = nebula_ca_crt;
+    ret = mbedtls_x509_crt_parse(&cacert, (const unsigned char *) cas_pem,
+                                 strlen((const char *)nebula_ca_crt) + 1);
+    if (ret < 0) {
+        mbedtls_printf(" failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n",
+                       (unsigned int) -ret);
+    }
+
+    mbedtls_printf(" ok (%d skipped)\n", ret);
 
     mbedtls_printf("  . Setting up the DTLS structure...");
     
@@ -785,6 +800,7 @@ void mbedtls_stuff() {
 
     //TODO: OPTIONAL is usually a bad choice for security
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_read_timeout(&conf, READ_TIMEOUT_MS);
 
@@ -894,6 +910,7 @@ void mbedtls_stuff() {
         switch (ret) {
             case MBEDTLS_ERR_SSL_TIMEOUT:
                 mbedtls_printf(" timeout\n\n");
+                ret = -1;
                 // if (retry_left-- > 0) {
                 //     goto send_request;
                 // }
