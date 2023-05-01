@@ -94,9 +94,12 @@ BOARD_SOURCES += \
 	nrf_crypto_init.c\
 	nrf_crypto_ecdh.c\
 	nrf_crypto_error.c\
+	nrf_crypto_aes.c\
+	nrf_crypto_aead.c\
 	nrf_atflags.c\
 	net_sockets.c\
 	sha256.c\
+	mbedtls_backend_aes_aead.c\
 
 endif
 

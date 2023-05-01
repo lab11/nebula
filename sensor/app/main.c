@@ -100,6 +100,17 @@ uint8_t fin_buf[READ_BUF_SIZE*2]; // stores data when transfer is finished
 uint32_t fin_buf_len = 0;
 uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
 
+//AES-GSM nounce 
+uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0};
+
+
+//Testing latency size array in kbytes
+#define NUM_TEST_SIZES 10
+uint32_t data_size_array[10] = {1, 2, 4}; // 16, 32, 64, 128, 256, 512};
+float latency_array[10];
+unsigned char buf[4*1024];
+
+
 //Debugging? Enable this.
 bool nebula_debug = false;
 
@@ -618,7 +629,7 @@ int main(void) {
     // mbedTLS initialization
     int ret, len;
     mbedtls_net_context server_fd;
-    unsigned char buf[1024];
+   
     const char *pers = 'dtls_server/sensor'; 
     unsigned char client_ip[16] = { 0 };
     size_t cliip_len;
@@ -834,9 +845,6 @@ int main(void) {
     uint32_t hs_time = app_timer_cnt_diff_compute(end, start);
     printf("mbedtls handshake successful, seconds: %f\n", (hs_time / (float)APP_TIMER_CLOCK_FREQ));
 
-
-    //TODO: actually send data encrypted over mbedtls
-
 /*
      * 6. Read the echo Request
      */
@@ -874,21 +882,31 @@ int main(void) {
 
 
     /* encrypt the data packet to write  */
-
+    //000102030405060708090A0B0C0D0E0F08090A0B0C0D0E0F08090A0B0C0D0E0F
     uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                                             0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
                                             0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: change ahhh
-    uint8_t iv[NRF_CRYPTO_AES_IV_SIZE] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
-                                          0xA8, 0xA9, 0xAA, 0xAB};
+                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: remove this
+    // uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+    //                                       0xA8, 0xA9, 0xAA, 0xAB};
 
     uint8_t plaintext[] = "Your message here!";
     size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
-    size_t payload_length = NRF_CRYPTO_AES_IV_SIZE + length + NRF_CRYPTO_AES_IV_SIZE;
+    size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + length + NRF_CRYPTO_AES_TAG_SIZE;
     uint8_t payload[payload_length];
 
+    printf("before encrypting...\n");
+
+       // Print the payload
+    printf("Unencrypted payload: ");
+    for (size_t i = 0; i < length; i++)
+    {
+        printf("%02x", plaintext[i]);
+    }
+    printf("\n");
+
     // Encrypt the character array
-    //encrypt_character_array(key, iv, plaintext, payload, length);
+    encrypt_character_array(key, nounce, plaintext, payload, length);
 
     // Print the encrypted payload
     printf("Encrypted payload: ");
@@ -907,10 +925,49 @@ int main(void) {
 
     len = payload_length;
 
+    //TODO: encrypt all the payloads 
+
 
     /*
      * 7. Write the 200 Response
      */
+    // for (int i = 0; i < NUM_TEST_SIZES; i++) {
+    //     //setup the buffer and len to write 
+    //     len = data_size_array[i]*1024;
+    //     memset(buf, 'a', len);
+
+    //     printf("  > Write to client:");
+
+    //     //start a timer for the write
+    //     start = app_timer_cnt_get();
+
+    //     do {
+    //         ret = mbedtls_ssl_write(&ssl, buf, len);
+    //     } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+    //             ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+    //     if (ret < 0) {
+    //         printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+    //         //goto exit;
+    //     }
+
+    //     len = ret;
+    //     //printf(" %d bytes written\n\n%s\n\n", len, buf);
+
+    //     //end timer
+    //     end = app_timer_cnt_get();
+
+    //     //print the time
+    //     uint32_t write_time = app_timer_cnt_diff_compute(end, start);
+    //     printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+
+    //     //put the time in the array 
+    //     latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
+
+    // }
+
+
+    // normal write 
     printf("  > Write to client:");
     fflush(stdout);
 
@@ -936,7 +993,7 @@ int main(void) {
     //stop ourselves from continuing on (mbedworks!! yay)
     while(true) {
         nrf_delay_ms(1000);
-        printf("waiting after data test yay\n");
+        //printf("waiting after data test yay\n");
     }
 
 
