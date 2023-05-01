@@ -38,6 +38,7 @@
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl_cookie.h"
 //#include "certs.h"
+//#include "esp_crt_bundle.h" // unnecessary unless trying to run https_with_url()
 #include "time.h"
 
 #include "backhaul.h"
@@ -72,7 +73,7 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 );
 
 #define CHUNK_SIZE 200
-#define MAX_PAYLOADS 1
+#define MAX_PAYLOADS 10
 #define READ_TIMEOUT_MS 1000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11"
@@ -83,9 +84,9 @@ uint8_t sensor_state_str [1500]; //for storing the certs
 uint8_t metadata_state [3];
 
 // A big buffer and pointer array to hold our payloads :3
-int num_payloads = 0;
-uint8_t big_data [10000] = {0};
-uint8_t *payloads [MAX_PAYLOADS+1];
+static int num_payloads = 0;
+static uint8_t big_data [10000] = {0};
+static uint8_t *payloads [MAX_PAYLOADS+1];
 
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
@@ -114,6 +115,9 @@ static char *token_starts[12]; // we can store up to 11 tokens
 
 extern const char app_and_server_cert_pem_start[] asm("_binary_app_and_server_cert_pem_start");
 extern const char app_and_server_cert_pem_end[]   asm("_binary_app_and_server_cert_pem_end");
+
+extern const char howsmyssl_com_root_cert_pem_start[] asm("_binary_howsmyssl_com_root_cert_pem_start");
+extern const char howsmyssl_com_root_cert_pem_end[]   asm("_binary_howsmyssl_com_root_cert_pem_end");
 
 /*
 * App call back for read of characteristic has completed
@@ -930,6 +934,58 @@ void http_get_test(void) {
     esp_http_client_cleanup(client);
 }
 
+/*
+// An attempt to verify my certificating..
+static void https_with_url(void)
+{
+    esp_http_client_config_t config = {
+        .url = "https://www.howsmyssl.com",
+        .event_handler = _http_event_handler,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(tag, "HTTPS Status = %d, content_length = %"PRIu64,
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        ESP_LOGE(tag, "Error perform http request %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
+}
+*/
+
+// An attempt to verify my certificating...
+static void https_with_hostname_path(void)
+{
+    // Instantiate a buffer to hold our resulting data.
+    char responseBuffer[200] = {0}; // I think our responses are 197 bytes long, so this should fit.
+    
+    esp_http_client_config_t config = {
+        .host = "34.27.170.95", //"www.howsmyssl.com",
+        .path = "/public_params", //"/",
+        .transport_type = HTTP_TRANSPORT_OVER_SSL,
+        .event_handler = _http_event_handler,
+        .cert_pem = app_and_server_cert_pem_start, //  howsmyssl_com_root_cert_pem_start,
+        .skip_cert_common_name_check = true,
+        .user_data = responseBuffer,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(tag, "HTTPS Status = %d, content_length = %"PRIu64,
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+        printf("HTTP GET data = %s\n", responseBuffer);
+    } else {
+        ESP_LOGE(tag, "Error perform http request %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
+}
+
 char *encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_len) {
 
     // First, verify that the output has enough space
@@ -973,15 +1029,16 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     
     // If everything looks ok, we do a POST request over HTTPS.
     esp_http_client_config_t config = {
-        .host = "34.27.170.95", // hehe we only have one APP server :3
+        .host = "34.31.110.212", // hehe we only have one APP server :3
         .path = "/deliver",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
         .cert_pem = app_and_server_cert_pem_start,
+        .skip_cert_common_name_check = true,
         .user_data = responseBuffer,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
-
+    
     // POST
     memcpy(post_data, json_prefix, prefix_len);
 
@@ -1017,7 +1074,6 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
             printf("%c", post_data[aChar]);
         }
     } printf("\n");
-    
     
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
@@ -1081,11 +1137,12 @@ void https_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated htt
     
     // Initiate a POST request.
     esp_http_client_config_t config = {
-        .host = "34.31.110.212", // hehe we hardcode the provider IP :3
+        .host = "34.27.170.95", // hehe we hardcode the provider IP :3
         .path = "/redeem_tokens",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
         .cert_pem = app_and_server_cert_pem_start,
+        .skip_cert_common_name_check = true,
         .user_data = responseBuffer,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -1150,6 +1207,10 @@ void app_main() {
     // init_wifi();
     token_starts[0] = token_buff; // initialize the token storage to start at the token buffer.
     payloads[0] = big_data; // initialize the payload storage to start at the payload buffer.
+
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # Commenting out BLE stuff to test WiFi stuff # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
 
     //
     // ~~~~~~~~ NIMBLE SCARY LAND >:( ~~~~~~~~~
@@ -1258,6 +1319,10 @@ void app_main() {
 
     
     //get connection handle 
+    
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # END commenting out BLE stuff to test WiFi stuff # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
 
     /*
      * Transfer all the data up to the application server.
@@ -1272,8 +1337,28 @@ void app_main() {
         printf("Failed to connect to WiFi. Retrying...\n");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    // TODO: we will want to wrap this in a while-loop and keep trying
-    // after a delay if it fails.
+
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # # Commenting out WiFi test stuff  # # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+    // A quick check to see if we can do HTTPS stuff from the tutorial.
+    printf("\nDoing a generic HTTPS with hostname path (from the tutorial)\n");
+    https_with_hostname_path();
+
+    // Generate some fake payloads (hopefully this works >.>).
+    int NUM_FAKE_PAYLOADS = 5;
+    uint8_t a_payload[12] = { 0xDE,0xAD,0xBE,0xEF,0x00,0xB1,0x6B,0x00,0xB5,0x00,0xB0,0xBA };
+    for (int i = 0; i < NUM_FAKE_PAYLOADS; i++) {
+        printf("memcpy from %p to %p len %d\n", a_payload, payloads[num_payloads], sizeof(a_payload));
+        memcpy(payloads[num_payloads], a_payload, sizeof(a_payload)); 
+        num_payloads++;
+        payloads[num_payloads] = payloads[num_payloads-1] + sizeof(a_payload);
+    }
+    
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # END commenting out WiFi test stuff  # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
 
     // Upload all of our data to the application servers and collect tokens :3
     https_attempt_many_uploads();
