@@ -685,13 +685,14 @@ int main(void) {
        
     }
 
-    const unsigned char *cas_pem = nebula_ca_crt;
-    ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cas_pem,
-                                 strlen(nebula_ca_crt)+1);
-    if (ret != 0) {
-        printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
+    // // comment out if to test sensor gets rejected 
+    // const unsigned char *cas_pem = nebula_ca_crt;
+    // ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cas_pem,
+    //                              strlen(nebula_ca_crt)+1);
+    // if (ret != 0) {
+    //     printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
         
-    }
+    // }
 
     const unsigned char *key_data = nebula_srv_key_ec;
     ret =  mbedtls_pk_parse_key(&pkey,
@@ -882,107 +883,111 @@ int main(void) {
 
 
     /* encrypt the data packet to write  */
-    //000102030405060708090A0B0C0D0E0F08090A0B0C0D0E0F08090A0B0C0D0E0F
-    uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-                                            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: remove this
+    // //000102030405060708090A0B0C0D0E0F08090A0B0C0D0E0F08090A0B0C0D0E0F
+    // uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: remove this
     // uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
     //                                       0xA8, 0xA9, 0xAA, 0xAB};
 
-    uint8_t plaintext[] = "Your message here!";
-    size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
-    size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + length + NRF_CRYPTO_AES_TAG_SIZE;
-    uint8_t payload[payload_length];
+    // uint8_t plaintext[] = "Your message here!";
+    // size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
+    // size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + length + NRF_CRYPTO_AES_TAG_SIZE;
+    // uint8_t payload[payload_length];
 
-    printf("before encrypting...\n");
+    // printf("before encrypting...\n");
 
-       // Print the payload
-    printf("Unencrypted payload: ");
-    for (size_t i = 0; i < length; i++)
-    {
-        printf("%02x", plaintext[i]);
-    }
-    printf("\n");
+    //    // Print the payload
+    // printf("Unencrypted payload: ");
+    // for (size_t i = 0; i < length; i++)
+    // {
+    //     printf("%02x", plaintext[i]);
+    // }
+    // printf("\n");
 
-    // Encrypt the character array
-    encrypt_character_array(key, nounce, plaintext, payload, length);
+    // // Encrypt the character array
+    // encrypt_character_array(sensor_key, nounce, plaintext, payload, length);
 
-    // Print the encrypted payload
-    printf("Encrypted payload: ");
-    for (size_t i = 0; i < payload_length; i++)
-    {
-        printf("%02x", payload[i]);
-    }
-    printf("\n");
+    // // Print the encrypted payload
+    // printf("Encrypted payload: ");
+    // for (size_t i = 0; i < payload_length; i++)
+    // {
+    //     printf("%02x", payload[i]);
+    // }
+    // printf("\n");
 
-    //copy into buf 
-    memcpy(buf, payload, payload_length);
+    // //copy into buf 
+    // memcpy(buf, payload, payload_length);
 
-    printf("length of buf: %d\n", sizeof(buf));
-    printf("length of plaintext: %d\n", length);
-    printf("length of payload: %d\n", payload_length);
+    // printf("length of buf: %d\n", sizeof(buf));
+    // printf("length of plaintext: %d\n", length);
+    // printf("length of payload: %d\n", payload_length);
 
-    len = payload_length;
-
-    //TODO: encrypt all the payloads 
+    // len = payload_length;
 
 
     /*
-     * 7. Write the 200 Response
+     * 7. Write the data packets of varying sizes to test 
      */
-    // for (int i = 0; i < NUM_TEST_SIZES; i++) {
-    //     //setup the buffer and len to write 
-    //     len = data_size_array[i]*1024;
-    //     memset(buf, 'a', len);
+    for (int i = 0; i < NUM_TEST_SIZES; i++) {
+        //setup the buffer and len to write 
+        len = data_size_array[i]*1024;
+        memset(buf, 'a', len);
+        size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + len + NRF_CRYPTO_AES_TAG_SIZE;
+        uint8_t payload[payload_length];
 
-    //     printf("  > Write to client:");
+        encrypt_character_array(sensor_key, nounce, buf, payload, len);
 
-    //     //start a timer for the write
-    //     start = app_timer_cnt_get();
+        memcpy(buf, payload, payload_length);
 
-    //     do {
-    //         ret = mbedtls_ssl_write(&ssl, buf, len);
-    //     } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
-    //             ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+        printf("  > Write to client:");
 
-    //     if (ret < 0) {
-    //         printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
-    //         //goto exit;
-    //     }
+        //start a timer for the write
+        start = app_timer_cnt_get();
 
-    //     len = ret;
-    //     //printf(" %d bytes written\n\n%s\n\n", len, buf);
+        do {
+            ret = mbedtls_ssl_write(&ssl, buf, len);
+        } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+                ret == MBEDTLS_ERR_SSL_WANT_WRITE);
 
-    //     //end timer
-    //     end = app_timer_cnt_get();
+        if (ret < 0) {
+            printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+            //goto exit;
+        }
 
-    //     //print the time
-    //     uint32_t write_time = app_timer_cnt_diff_compute(end, start);
-    //     printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+        //end timer
+        end = app_timer_cnt_get();
 
-    //     //put the time in the array 
-    //     latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
+        len = ret;
+        //printf(" %d bytes written\n\n%s\n\n", len, buf);
 
-    // }
+        //print the time
+        uint32_t write_time = app_timer_cnt_diff_compute(end, start);
+        printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
 
+        //put the time in the array 
+        latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
 
-    // normal write 
-    printf("  > Write to client:");
-    fflush(stdout);
-
-    do {
-        ret = mbedtls_ssl_write(&ssl, buf, len);
-    } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
-             ret == MBEDTLS_ERR_SSL_WANT_WRITE);
-
-    if (ret < 0) {
-        printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
-        //goto exit;
     }
 
-    len = ret;
-    printf(" %d bytes written\n\n%s\n\n", len, buf);
+
+    // // normal write 
+    // printf("  > Write to client:");
+    // fflush(stdout);
+
+    // do {
+    //     ret = mbedtls_ssl_write(&ssl, buf, len);
+    // } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+    //          ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+    // if (ret < 0) {
+    //     printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+    //     //goto exit;
+    // }
+
+    // len = ret;
+    // printf(" %d bytes written\n\n%s\n\n", len, buf);
 
 
 
@@ -990,45 +995,45 @@ int main(void) {
 
 
 
-    //stop ourselves from continuing on (mbedworks!! yay)
-    while(true) {
-        nrf_delay_ms(1000);
-        //printf("waiting after data test yay\n");
-    }
+    // //stop ourselves from continuing on (mbedworks!! yay)
+    // while(true) {
+    //     nrf_delay_ms(1000);
+    //     //printf("waiting after data test yay\n");
+    // }
 
 
-    //End-to-End test
-    while(true) {
+    // //End-to-End test
+    // while(true) {
 
-        while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
-            printf("waiting to connect..\n");
-            nrf_delay_ms(100);
-            ble_conn_handle = simple_ble_app->conn_handle;
-        }
+    //     while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
+    //         printf("waiting to connect..\n");
+    //         nrf_delay_ms(100);
+    //         ble_conn_handle = simple_ble_app->conn_handle;
+    //     }
 
-        if (mule_state[2] == 2 ) {
-            printf("waiting for mule to send data back\n");
-            nrf_delay_ms(5000); // give em .5 seconds
-            mule_state[0] = 0;
-            mule_state[1] = 0;
-            mule_state[2] = 0;
-            error_code = ble_write( (char *)mule_state, 3, &mule_state_char, 0);
-        }
-        else if (mule_state[2] == 1) {
-            //already sending data
-        }
-        else {
-            // time to send some more data //todo make sensor state data
-            printf("time to send more!\n");
-            //uint8_t data_test [1000];
-            error_code = ble_write_long(&ble_conn_handle, (char*)data, 1000);
-            printf("made it through sending data\n");
-            nrf_delay_ms(500);
+    //     if (mule_state[2] == 2 ) {
+    //         printf("waiting for mule to send data back\n");
+    //         nrf_delay_ms(5000); // give em .5 seconds
+    //         mule_state[0] = 0;
+    //         mule_state[1] = 0;
+    //         mule_state[2] = 0;
+    //         error_code = ble_write( (char *)mule_state, 3, &mule_state_char, 0);
+    //     }
+    //     else if (mule_state[2] == 1) {
+    //         //already sending data
+    //     }
+    //     else {
+    //         // time to send some more data //todo make sensor state data
+    //         printf("time to send more!\n");
+    //         //uint8_t data_test [1000];
+    //         error_code = ble_write_long(&ble_conn_handle, (char*)data, 1000);
+    //         printf("made it through sending data\n");
+    //         nrf_delay_ms(500);
 
-        }
-    }
+    //     }
+    // }
 
-    printf("done sending data, closing connection\n");
+    // printf("done sending data, closing connection\n");
 
     // TODO: after mbedtls Cleanup 
     // printf("clean up!\n");

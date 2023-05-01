@@ -43,7 +43,7 @@
 #define MBEDTLS_SSL_HS_TIMEOUT_MIN 200000
 #define MBEDTLS_SSL_HS_TIMEOUT_MAX 400000
 #define MAX_RETRY       5
-#define SERVER_NAME "SENSOR_LAB11" 
+#define SERVER_NAME "Nebula Sensor" 
 #define READ_BUF_SIZE 4096
 #define DEBUG_LEVEL 0
 #define NEBULA_SVC_UUID 0x180A // This is the UUID for the Nebula service (also apparently the default LOL TODO: change this)
@@ -798,7 +798,7 @@ void mbedtls_stuff() {
     mbedtls_debug_set_threshold(DEBUG_LEVEL);
     mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
 
-    //TODO: OPTIONAL is usually a bad choice for security
+    //can change to VERIFY_OPTIONAL for debug TODO: change to REQUIRED and handle here
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
@@ -861,6 +861,8 @@ void mbedtls_stuff() {
 #endif
 
         mbedtls_printf(" failed\n");
+
+        return; //TODO: disconnect BLE 
 
 #if !defined(MBEDTLS_X509_REMOVE_INFO)
         mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);

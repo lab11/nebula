@@ -6,9 +6,12 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *nounce, const ui
 {
     ret_code_t ret_val;
     nrf_crypto_aead_context_t aes_ctx;
-    
 
-    printf("init aes\n");
+    bool debug = false;
+    
+    if (debug) {
+        printf("init aes\n");
+    }
 
     // Initialize AES-256 GCM context
     ret_val = nrf_crypto_aead_init(&aes_ctx, &g_nrf_crypto_aes_gcm_256_info, key);
@@ -18,7 +21,9 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *nounce, const ui
         return;
     }
 
-    printf("make tag\n");
+    if (debug) {
+        printf("set tag\n");
+    }
 
     // Compute the authentication tag
     uint8_t tag[NRF_CRYPTO_AES_TAG_SIZE]; 
@@ -29,7 +34,9 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *nounce, const ui
         return;
     }
 
-    printf("encrypt\n");
+    if (debug) {
+        printf("set encrypt\n");
+    }
 
     // Encrypt the plaintext using AES-256 GCM
     uint8_t ciphertext[length];
@@ -41,27 +48,28 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *nounce, const ui
         return;
     }
 
+    if (debug) {
+        printf("nounce: ");
+        for (int i = 0; i < 12; i++)
+        {
+            printf("%02x", nounce[i]);
+        }
+        printf("\n");
 
-    printf("nounce: ");
-    for (int i = 0; i < 12; i++)
-    {
-        printf("%02x", nounce[i]);
-    }
-    printf("\n");
+        printf("tag: ");
+        for (int i = 0; i < 16; i++)
+        {
+            printf("%02x", tag[i]);
+        }
+        printf("\n");
 
-    printf("tag: ");
-    for (int i = 0; i < 16; i++)
-    {
-        printf("%02x", tag[i]);
+        printf("ciphertext: ");
+        for (int i = 0; i < length; i++)
+        {
+            printf("%02x", ciphertext[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
-
-    printf("ciphertext: ");
-    for (int i = 0; i < length; i++)
-    {
-        printf("%02x", ciphertext[i]);
-    }
-    printf("\n");
 
     // Create the payload with the structure: IV || Ciphertext || Authentication Tag
     memcpy(payload, nounce, NRF_CRYPTO_AES_NOUCE_SIZE);
