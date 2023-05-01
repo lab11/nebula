@@ -15,7 +15,7 @@ unused_tokens = []
 
 
 def get_public_params() -> bytes:
-    return requests.get(provider_url + "/public_params").json()["result"]
+    return requests.get(provider_url + "/public_params", verify=False).json()["result"]
 
 
 # a function get_more_tokens that makes a GET request and atomically adds them to unused_tokens
@@ -33,6 +33,7 @@ def get_more_tokens(num_tokens: int) -> list[str]:
 
     signed_tokens = [util.decode_bytes(t) for t in requests.post(
         provider_url + "/sign_tokens",
+        verify=False,
         headers = {'Content-type': 'application/json'},
         data=json.dumps({"blinded_tokens": blinded_tokens})
     ).json()["result"]]
