@@ -33,8 +33,8 @@ void encrypt_character_array(const uint8_t *key, const uint8_t *nounce, const ui
 
     // Encrypt the plaintext using AES-256 GCM
     uint8_t ciphertext[length];
-    ret_val = nrf_crypto_aead_crypt(&aes_ctx, NRF_CRYPTO_ENCRYPT, &nounce, NRF_CRYPTO_AES_NOUCE_SIZE, NULL,
-                                 0, plaintext, sizeof(plaintext), payload, tag, NRF_CRYPTO_AES_TAG_SIZE);
+    ret_val = nrf_crypto_aead_crypt(&aes_ctx, NRF_CRYPTO_ENCRYPT, nounce, NRF_CRYPTO_AES_NOUCE_SIZE, NULL,
+                                 0, plaintext, length, ciphertext, tag, NRF_CRYPTO_AES_TAG_SIZE);
     if (ret_val != NRF_SUCCESS)
     {
         printf("Encryption failed. Error: 0x%x\n", ret_val);

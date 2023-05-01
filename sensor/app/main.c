@@ -105,10 +105,10 @@ uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0};
 
 
 //Testing latency size array in kbytes
-#define NUM_TEST_SIZES 10
-uint32_t data_size_array[10] = {1, 2, 4}; // 16, 32, 64, 128, 256, 512};
-float latency_array[10];
-unsigned char buf[4*1024];
+#define NUM_TEST_SIZES 4
+uint32_t data_size_array[10] = {1, 2, 3, 4};
+float latency_array[NUM_TEST_SIZES] = {0};
+unsigned char buf[55*1024];
 
 
 //Debugging? Enable this.
@@ -920,7 +920,7 @@ int main(void) {
     memcpy(buf, payload, payload_length);
 
     printf("length of buf: %d\n", sizeof(buf));
-    printf("len: %d\n", len);
+    printf("length of plaintext: %d\n", length);
     printf("length of payload: %d\n", payload_length);
 
     len = payload_length;
