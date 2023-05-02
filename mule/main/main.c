@@ -37,14 +37,14 @@
 #include "certs.h"
 
 // Definitions
-#define CHUNK_SIZE 495
+#define CHUNK_SIZE 185 //495
 #define MAX_PAYLOADS 1
 #define READ_TIMEOUT_MS 200000
 #define MBEDTLS_SSL_HS_TIMEOUT_MIN 200000
 #define MBEDTLS_SSL_HS_TIMEOUT_MAX 400000
 #define MAX_RETRY       5
 #define SERVER_NAME "Nebula Sensor" 
-#define READ_BUF_SIZE 4096
+#define READ_BUF_SIZE 2048 //4096
 #define DEBUG_LEVEL 0
 #define NEBULA_SVC_UUID 0x180A // This is the UUID for the Nebula service (also apparently the default LOL TODO: change this)
 #define MESSAGE     "Echo this"
@@ -125,6 +125,17 @@ uint8_t chunk_ack = 0; // number of chunks we have gotten an ack for so far
 //Debugging? Enable this.
 bool nebula_debug = false;
 
+//connection and subscription time 
+uint32_t start_time = 0;
+uint32_t end_time = 0;
+
+// latency tests
+#define NUM_TEST_SIZES 10
+uint32_t data_size_array[NUM_TEST_SIZES] = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512};
+float latency_array[NUM_TEST_SIZES] = {0};
+float latency_array_plaintext[NUM_TEST_SIZES] = {0};
+unsigned char buf[READ_BUF_SIZE*2];
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* mbedtls debug function */
@@ -155,6 +166,9 @@ static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *e
     MODLOG_DFLT(INFO, "Subscribe data complete; status=%d conn_handle=%d attr_handle=%d\n",
                 error->status, conn_handle, attr->handle);
 
+    //set connected so can proceed 
+    connected = 1;
+
     // write out MTU size to console 
     MODLOG_DFLT(INFO, "MTU size: %d\n", ble_att_mtu(conn_handle));
     return 0;
@@ -164,9 +178,15 @@ static int ble_on_subscribe(uint16_t conn_handle, const struct ble_gatt_error *e
 static void ble_write(const struct peer *peer, char *buf, const struct peer_chr *chr, size_t len) {
     int rc;
 
+    printf("Writing to characteristic\n");
+    printf("conn handle: %d\n", peer->conn_handle);
+    printf("val handle: %d\n", chr->chr.val_handle);
+    printf("len: %d\n", len);
+    printf("buf: %p\n", buf);
+
     /* Write the characteristic. */
-    rc = ble_gattc_write_flat(peer->conn_handle, chr->chr.val_handle,
-                              buf, len, ble_on_write, NULL);
+    rc = ble_gattc_write_no_rsp_flat(peer->conn_handle, chr->chr.val_handle,
+                              buf, len); // ble_on_write, NULL);
     if (rc != 0) {
         printf("Error: Failed to write characteristic. Try again.. rc=%d\n", rc);
     }
@@ -325,6 +345,7 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
     if (nebula_debug) {
         printf("mule called ble read long\n");
     }
+    //printf("mule called ble read long\n");
 
     // connection has been closed
     if (connected == 0) {
@@ -349,6 +370,53 @@ int ble_read_long(void *p_ble_conn_handle, unsigned char *buf, size_t len) {
 
     //printf("ble_read_long: no data available, returning SSL_WANT_READ\n");
     return MBEDTLS_ERR_SSL_WANT_READ;
+}
+
+void plaintext_latency() {
+
+    printf("plaintext latency test\n");
+
+    for (int i = 0; i < NUM_TEST_SIZES; i++) {
+        //setup the buffer and len to write 
+        int len = data_size_array[i]*1024;
+
+        if (len > READ_BUF_SIZE) {
+            printf("data size too large for buffer read in chunks\n");
+            printf("  > Read %d B to client plaintext:", len);
+
+            int num_payloads = ceil(len/ (float)((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)));
+            for (int j = 0; j < num_payloads; j++) {
+                int len_for_write = 0;
+
+                //if one left to go 
+                if (j == num_payloads - 1 ) {
+                    //perfect size 
+                    if (len == ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)) ) {
+                        len_for_write = len;
+                    } else { // left over
+                        len_for_write = len % ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE));
+                    }
+                } else { // not the last one
+                    len_for_write = (READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE);
+                }
+
+                int ret = ble_read_long(&ble_conn_handle, buf, len_for_write);
+
+                len -= len_for_write;
+            
+            }
+
+
+        } else { // just read it
+            
+            printf("  > Read %d B to client plaintext:", len);
+
+            int ret = ble_read_long(&ble_conn_handle, buf, len);
+
+        }
+
+    }
+    
 }
 
 /* Initiates the GAP general discovery procedure. */
@@ -534,7 +602,7 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
 
             //Save the connection handle for future reference
             ble_conn_handle = event->connect.conn_handle;
-            connected = 1;
+            //connected = 1;
 
         } else {
             //Connection attempt failed; resume scanning
@@ -621,6 +689,10 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
             const struct peer_chr *chr_mule = peer_chr_find_uuid(peer, sensor_svc_uuid, mule_chr_uuid);
 
             if (header->type == 0x00) { // sensor is sending payload
+
+                uint32_t payload_start_time = esp_log_timestamp();
+
+
                 //check if we were writing (bad times)
                 if (trx_state == 1) {
                     printf("Sensor is sending a payload while we are writing\n");
@@ -648,10 +720,21 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                 if (nebula_debug) {
                     printf("Sending ack for chunk %d\n", header->chunk);
                 }
+
+                uint32_t payload_end_time = esp_log_timestamp();
+
+                uint32_t write_start_time = esp_log_timestamp();
                 
                 // send ack to sensor to confirm packet recieved
                 struct ble_header ack_header = {0x01, header->chunk, header->len, header->total_chunks}; //TODO: sanity check len of header is right. 
                 ble_write(peer, (char *)&ack_header, chr_mule, sizeof(struct ble_header));
+
+                uint32_t write_end_time = esp_log_timestamp();
+
+                //printf the time it took to recieve and send ack
+
+                printf("Time to recieve payload: %ld\n", payload_end_time - payload_start_time);
+                printf("Time to send ack: %ld\n", write_end_time - write_start_time);
             }
             else if (header->type == 0x01) { //sensor is sending ack
                 //check if we were listening (bad times)
@@ -685,6 +768,8 @@ static int mule_ble_gap_event(struct ble_gap_event *event, void *arg) {
                 if(nebula_debug) {
                     printf("Got a fin from sensor\n");
                 }
+
+                printf("got a fin");
 
                 // we're done go back to listening state
                 memcpy(fin_buf, data_buf, data_buf_len);
@@ -941,13 +1026,9 @@ void mbedtls_stuff() {
     printf("\n");
 
 
-
-
-    
-
     while(true) {
         //wait for data
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 
     mbedtls_ssl_session_reset(&ssl);
@@ -1318,17 +1399,11 @@ void app_main() {
 
     ble_store_config_init();
 
+    start_time = esp_log_timestamp();
+
     //Start the muling task 
     nimble_port_freertos_init(mule_host_task);
     printf("Started connection\n");
-    
-
-    //waits for BLE connection to continue 
-    // while (ble_gap_conn_active() == 0) {
-    //     //wait  
-    //     printf("waiting for BLE connection\n");
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
 
     while (connected == 0) {
         //wait  
@@ -1336,63 +1411,35 @@ void app_main() {
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 
+    end_time = esp_log_timestamp();
+
+    printf("Time to connect: %f s\n", (end_time - start_time)/1000.0);
+
     printf("BLE connected...\n");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-   
-    // //test read and write
-    // int len;
-    // uint8_t test_buf[1000];
-    // //sensor_state[0] = 0xff; // start in sensor ack mode.. as if sensor acked
-    // len = ble_read_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
-    // len = ble_write_long(&ble_conn_handle, (unsigned char *)test_buf, 1000);
-    
-    //mbedtls handshake
     mbedtls_stuff();
 
-    //start a timer 
+    //plaintext read latency test
+    //plaintext_latency();
 
-    // while(num_payloads < MAX_PAYLOADS) { // get data and send data to either server or back to sensor
+    while(true) {
+        //wait
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        //ble_read_long(&ble_conn_handle, buf, 495);
+    }
+    
+    // //mbedtls handshake
+    
 
-    //     //waits for BLE connection to continue 
-    //     // while (ble_gap_conn_active() == 0) {
-    //     //     //wait  
-    //     //     printf("waiting for BLE connection\n");
-    //     //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //     // }
+ 
+    // printf("disconnect BLE\n");
+    // nimble_port_stop();
 
-    //     //waiting for data transfer 
-    //     if (mule_state[2] != 2) {
-    //         //printf("waiting for data transfer\n");
-    //         //printf("metadata_state[2] = %d\n", metadata_state[2]);
-    //         vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //         continue;
-    //     }
-    //     else {
-    //         printf("data transfer complete\n");
-    //         //copy to big buffer using payload pointers
-    //         memcpy(payloads[num_payloads], sensor_state_data, CHUNK_SIZE*mule_state[0]); 
-    //         num_payloads++;
-    //         payloads[num_payloads] = payloads[num_payloads-1] + CHUNK_SIZE*mule_state[0];
 
-    //         // TODO: do we have data to write to the sensor?
-    //         // TODO: is it time to upload our data? 
-    //         // Go back to waiting for data transfer state
-    //         vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //         //metadata_state[0] = 0;
-    //         //metadata_state[1] = 0;
-    //         //metadata_state[2] = 0;
-    //         //ble_write_long(&ble_conn_handle, metadata_state, 3);
-    //     }
-    // }
-    //sanity checking data
-    // for (int i = 0; i < MAX_PAYLOADS*CHUNK_SIZE; i++) {
-    //     printf("data %x\n", big_data[i]);
-    // }
 
-    //TODO: disconnect and wait to send data to server
-    printf("disconnect BLE\n");
-    nimble_port_stop();
+
+
 
     //data transfer complete we can write data to server (or write back to sensor)
     //int len = 1000;
@@ -1409,38 +1456,42 @@ void app_main() {
     
     //get connection handle 
 
-    /*
-     * Transfer all the data up to the application server.
-     */
 
-    // Try to connect to WiFi.
-    while (true) {
-        esp_err_t error_code = init_wifi();
-        if (error_code == ESP_OK) {
-            break;
-        }
-        printf("Failed to connect to WiFi. Retrying...\n");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    // TODO: we will want to wrap this in a while-loop and keep trying
-    // after a delay if it fails.
 
-    // Upload all of our data to the application servers and collect tokens :3
-    http_attempt_many_uploads();
+    //comment back in for wifi!!
+
+    // /*
+    //  * Transfer all the data up to the application server.
+    //  */
+
+    // // Try to connect to WiFi.
+    // while (true) {
+    //     esp_err_t error_code = init_wifi();
+    //     if (error_code == ESP_OK) {
+    //         break;
+    //     }
+    //     printf("Failed to connect to WiFi. Retrying...\n");
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+    // // TODO: we will want to wrap this in a while-loop and keep trying
+    // // after a delay if it fails.
+
+    // // Upload all of our data to the application servers and collect tokens :3
+    // http_attempt_many_uploads();
     
-    printf("Finished our multiple upload!!\n\nNow trying the token redemption!\n");
+    // printf("Finished our multiple upload!!\n\nNow trying the token redemption!\n");
 
-    http_attempt_redeem();
+    // http_attempt_redeem();
     
-    printf("Finished the token redemption test! Hopefully everything works >.>\n");
+    // printf("Finished the token redemption test! Hopefully everything works >.>\n");
 
-    //TODO: clean up mbedtls stuff and restart 
+    // //TODO: clean up mbedtls stuff and restart 
     
-    for (int i = 30; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    printf("Restarting now.\n");
-    fflush(stdout);
-    esp_restart();
+    // for (int i = 30; i >= 0; i--) {
+    //     printf("Restarting in %d seconds...\n", i);
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+    // printf("Restarting now.\n");
+    // fflush(stdout);
+    // esp_restart();
 }

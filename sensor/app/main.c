@@ -38,9 +38,9 @@
 
 // Definitions
 #define LED NRF_GPIO_PIN_MAP(0,13)
-#define CHUNK_SIZE 495
+#define CHUNK_SIZE 185 //495
 #define READ_TIMEOUT_MS 200000   /* 10 seconds */
-#define READ_BUF_SIZE 4096
+#define READ_BUF_SIZE 2048 //4096
 #define DEBUG_LEVEL 0
 
 #define MBEDTLS_SSL_HS_TIMEOUT_MIN 200000
@@ -105,10 +105,11 @@ uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0};
 
 
 //Testing latency size array in kbytes
-#define NUM_TEST_SIZES 4
-uint32_t data_size_array[10] = {1, 2, 3, 4};
+#define NUM_TEST_SIZES 9
+uint32_t data_size_array[NUM_TEST_SIZES] = {1, 2, 4, 8, 16, 32, 64, 128, 256}; // 512};
 float latency_array[NUM_TEST_SIZES] = {0};
-unsigned char buf[55*1024];
+float latency_array_plaintext[NUM_TEST_SIZES] = {0};
+unsigned char buf[READ_BUF_SIZE*2];
 
 
 //Debugging? Enable this.
@@ -138,6 +139,8 @@ void entropy_source(void *data, unsigned char *output, size_t len, size_t *olen)
 
 /* event called when sensor gets a write over BLE*/
 void ble_evt_write(ble_evt_t const * p_ble_evt) { 
+
+    //printf("ble_evt_write\n");
 
     // Check if the event if on the link for this central
     if (p_ble_evt->evt.gatts_evt.conn_handle != simple_ble_app->conn_handle) {
@@ -224,6 +227,7 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
                 return;
             }
             else { //chunk is the right chunks
+                //printf("Got an ack for chunk %d\n", header->chunk);
                 chunk_ack += 1;
             }
 
@@ -262,6 +266,10 @@ void ble_evt_write(ble_evt_t const * p_ble_evt) {
 /* writes big packets over BLE in chunks, requires ack from sensor */
 int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len) 
 {
+    //print called ble long and time
+    //printf("sensor called ble write long\n");
+    //uint32_t start_time = app_timer_cnt_get();
+
     //if debugging, print write info
     if (nebula_debug) {
         printf("sensor called ble write long\n");
@@ -286,6 +294,7 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         }
 
         //otherwise, just short delay and check again
+        printf("tx state wrong\n");
         nrf_delay_ms(10);
     }
 
@@ -343,21 +352,26 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
         len -= len_for_write;
 
         //wait for ack saying number of packets recieved is same as sent
+        //uint32_t start_ack = app_timer_cnt_get();
         while (chunk_ack != i+1) {
             
             //if debugging, print and delay so print is visible
             if (nebula_debug) {
                 printf("waiting for ack from mule\n");
-                nrf_delay_ms(1000);
+                //nrf_delay_ms(1000);
             }
 
             //otherwise, just short delay and check again
             nrf_delay_ms(10);
 
-        }
+        }  
+        //uint32_t end_ack = app_timer_cnt_get();
+        //uint32_t ack_time = app_timer_cnt_diff_compute(end_ack, start_ack);
+        //printf("wait for ack time: %f\n", (ack_time / (float)APP_TIMER_CLOCK_FREQ));
 
     }
 
+    //printf("write fin");
     //send fin to mule 
     struct ble_header *fin_header = (struct ble_header *) local_buf;
     fin_header->type = 0x02;
@@ -376,6 +390,13 @@ int ble_write_long(void *p_ble_conn_handle, const unsigned char *buf, size_t len
     //write is done, reset to listening
     trx_state = 0; 
 
+    //end time 
+    //uint32_t end_time = app_timer_cnt_get();
+
+    //print time diff
+    //uint32_t write_time = app_timer_cnt_diff_compute(end_time, start_time);
+    //printf("write long successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+      
     return original_len;
 }
 
@@ -602,6 +623,89 @@ int dtls_get_delay(void *data) {
     return 0; 
 }
 
+void plaintext_latency() {
+
+    printf("plaintext latency test\n");
+
+    for (int i = 0; i < NUM_TEST_SIZES; i++) {
+        //setup the buffer and len to write 
+        int len = data_size_array[i]*1024;
+        //len = 10240;
+
+        if (len > READ_BUF_SIZE) {
+
+            //nrf_delay_ms(3000);
+
+            //printf("data size too large for buffer send in chunks\n");
+            printf("  > Write %d B to client plaintext:", len);
+            //start a timer for the write
+            uint32_t start_write = app_timer_cnt_get();
+            
+
+            int num_payloads = ceil(len/ (float)((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)));
+            for (int j = 0; j < num_payloads; j++) {
+                int len_for_write = 0;
+
+                //if one left to go 
+                if (j == num_payloads - 1 ) {
+                    //perfect size 
+                    if (len == ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)) ) {
+                        len_for_write = len;
+                    } else { // left over
+                        len_for_write = len % ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE));
+                    }
+                } else { // not the last one
+                    len_for_write = (READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE);
+                }
+
+                //printf("len for write: %d\n", len_for_write);
+                memset(buf, 'a', len_for_write);
+                int ret = ble_write_long(&simple_ble_app->conn_handle, buf, len_for_write);
+
+                len -= len_for_write;
+                //printf("  > Write %d B to client plaintext:", len_for_write);
+                //printf(" %d bytes written\n\n%s\n\n", len, buf);
+
+                
+
+            }
+
+            //end timer
+            uint32_t end_write = app_timer_cnt_get();
+
+            //print the time
+            uint32_t write_time = app_timer_cnt_diff_compute(end_write, start_write);
+            printf("ble write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+
+            //put the time in the array 
+            latency_array_plaintext[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
+
+
+        } else { // just send it over
+            
+            printf("  > Write %d B to client plaintext:", len);
+
+            memset(buf, 'a', len);
+
+            //start a timer for the write
+            uint32_t start_write = app_timer_cnt_get();
+
+            int ret = ble_write_long(&simple_ble_app->conn_handle, buf, len);
+
+            //end timer
+            uint32_t end_write = app_timer_cnt_get();
+
+            //print the time
+            uint32_t write_time = app_timer_cnt_diff_compute(end_write, start_write);
+            printf("ble write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+
+            //put the time in the array 
+            latency_array_plaintext[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
+        }
+
+    }
+}
+
 
 /* The core of it all! */
 int main(void) {
@@ -685,14 +789,13 @@ int main(void) {
        
     }
 
-    // // comment out if to test sensor gets rejected 
-    // const unsigned char *cas_pem = nebula_ca_crt;
-    // ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cas_pem,
-    //                              strlen(nebula_ca_crt)+1);
-    // if (ret != 0) {
-    //     printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
+    const unsigned char *cas_pem = nebula_ca_crt;
+    ret = mbedtls_x509_crt_parse(&srvcert, (const unsigned char *) cas_pem,
+                                 strlen(nebula_ca_crt)+1);
+    if (ret != 0) {
+        printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
         
-    // }
+    }
 
     const unsigned char *key_data = nebula_srv_key_ec;
     ret =  mbedtls_pk_parse_key(&pkey,
@@ -793,6 +896,9 @@ int main(void) {
         sizeof(mule_state), (char*)&mule_state,
         &sensor_service, &mule_state_char);
 
+    //start timing 
+    uint32_t start_conn = app_timer_cnt_get();
+
     // Start Advertising
     advertising_start();
 
@@ -805,8 +911,20 @@ int main(void) {
         ble_conn_handle = simple_ble_app->conn_handle;
     }
 
+    //stop timing
+    uint32_t end_conn = app_timer_cnt_get();
+
+    uint32_t conn_time = app_timer_cnt_diff_compute(end_conn, start_conn);
+    printf("BLE connection successful, seconds: %f\n", (conn_time / (float) APP_TIMER_CLOCK_FREQ));
+
     printf("BLE connected...\n");
-    nrf_delay_ms(1000);
+    nrf_delay_ms(3000); //wait for subscribe to finish on mule side
+
+
+    //send data over plaintext and measure time
+    //plaintext_latency();
+
+    //nrf_delay_ms(2000); //wait for plaintext to finish
 
     /*
     * MBEDTLS handshake
@@ -818,11 +936,12 @@ int main(void) {
     mbedtls_ssl_conf_handshake_timeout(&conf, MBEDTLS_SSL_HS_TIMEOUT_MIN,
                                     MBEDTLS_SSL_HS_TIMEOUT_MAX);
 
+
+    printf("trying the handshake...\n");
     //start a timer for the handshake
-    uint32_t start = app_timer_cnt_get();
+    uint32_t start_handshake = app_timer_cnt_get();
 
     // handshake
-    printf("trying the handshake...\n");
     ret = mbedtls_ssl_handshake(&ssl);
     while (ret != 0) {
 
@@ -842,8 +961,8 @@ int main(void) {
     }
 
     //stop the timer
-    uint32_t end = app_timer_cnt_get();
-    uint32_t hs_time = app_timer_cnt_diff_compute(end, start);
+    uint32_t end_handshake = app_timer_cnt_get();
+    uint32_t hs_time = app_timer_cnt_diff_compute(end_handshake, start_handshake);
     printf("mbedtls handshake successful, seconds: %f\n", (hs_time / (float)APP_TIMER_CLOCK_FREQ));
 
 /*
@@ -880,114 +999,130 @@ int main(void) {
     len = ret;
     printf(" %d bytes read\n\n%s\n\n", len, buf);
 
-
-
-    /* encrypt the data packet to write  */
-    // //000102030405060708090A0B0C0D0E0F08090A0B0C0D0E0F08090A0B0C0D0E0F
-    // uint8_t key[NRF_CRYPTO_AES_KEY_SIZE] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-    //                                         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // TODO: remove this
-    // uint8_t nounce[NRF_CRYPTO_AES_NOUCE_SIZE] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
-    //                                       0xA8, 0xA9, 0xAA, 0xAB};
-
-    // uint8_t plaintext[] = "Your message here!";
-    // size_t length = sizeof(plaintext) - 1; // Subtract 1 to ignore the null-terminator
-    // size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + length + NRF_CRYPTO_AES_TAG_SIZE;
-    // uint8_t payload[payload_length];
-
-    // printf("before encrypting...\n");
-
-    //    // Print the payload
-    // printf("Unencrypted payload: ");
-    // for (size_t i = 0; i < length; i++)
-    // {
-    //     printf("%02x", plaintext[i]);
-    // }
-    // printf("\n");
-
-    // // Encrypt the character array
-    // encrypt_character_array(sensor_key, nounce, plaintext, payload, length);
-
-    // // Print the encrypted payload
-    // printf("Encrypted payload: ");
-    // for (size_t i = 0; i < payload_length; i++)
-    // {
-    //     printf("%02x", payload[i]);
-    // }
-    // printf("\n");
-
-    // //copy into buf 
-    // memcpy(buf, payload, payload_length);
-
-    // printf("length of buf: %d\n", sizeof(buf));
-    // printf("length of plaintext: %d\n", length);
-    // printf("length of payload: %d\n", payload_length);
-
-    // len = payload_length;
+    //plaintext_latency();
 
 
     /*
      * 7. Write the data packets of varying sizes to test 
      */
-    for (int i = 0; i < NUM_TEST_SIZES; i++) {
+    //for (int i = 0; i < NUM_TEST_SIZES; i++) {
+
+    while (1) {
+        int i = 0;
         //setup the buffer and len to write 
-        len = data_size_array[i]*1024;
-        memset(buf, 'a', len);
-        size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + len + NRF_CRYPTO_AES_TAG_SIZE;
-        uint8_t payload[payload_length];
+        int len = data_size_array[i]*1024;
+    
 
-        encrypt_character_array(sensor_key, nounce, buf, payload, len);
+        if (len > READ_BUF_SIZE) {
+            //printf("data size too large for buffer send in chunks\n");
+            printf("  > Write %d B to client:",len);
+            
+            //start a timer for the write
+            uint32_t start_write = app_timer_cnt_get();
 
-        memcpy(buf, payload, payload_length);
+            int num_payloads = ceil(len/ (float)((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)));
+            for (int j = 0; j < num_payloads; j++) {
+                int len_for_write = 0;
 
-        printf("  > Write to client:");
+                //if one left to go 
+                if (j == num_payloads - 1 ) {
+                    //perfect size 
+                    if (len == ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE)) ) {
+                        len_for_write = len;
+                    } else { // left over
+                        len_for_write = len % ((READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE));
+                    }
+                } else { // not the last one
+                    len_for_write = (READ_BUF_SIZE/CHUNK_SIZE)*(CHUNK_SIZE);
+                }
 
-        //start a timer for the write
-        start = app_timer_cnt_get();
+                memset(buf, 'a', len_for_write);
+                size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + len_for_write + NRF_CRYPTO_AES_TAG_SIZE;
+                uint8_t payload[payload_length];
 
-        do {
-            ret = mbedtls_ssl_write(&ssl, buf, len);
-        } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
-                ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+                encrypt_character_array(sensor_key, nounce, buf, payload, len_for_write);
 
-        if (ret < 0) {
-            printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
-            //goto exit;
+                memcpy(buf, payload, payload_length);
+
+                do {
+                    ret = mbedtls_ssl_write(&ssl, buf, payload_length);
+                } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+                        ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+                if (ret < 0) {
+                    printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+                    //goto exit;
+                }
+
+                len -= len_for_write;
+
+            }
+
+            //end timer
+            uint32_t end_write = app_timer_cnt_get();
+
+            //print the time
+            uint32_t write_time = app_timer_cnt_diff_compute(end_write, start_write);
+            printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+
+            //put the time in the array 
+            latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
+
+
+        } else { // just send it over
+            
+            printf("  > Write %d B to client:",len);
+            //start a timer for the write
+            uint32_t start_write = app_timer_cnt_get();
+
+            memset(buf, 'a', len);
+            size_t payload_length = NRF_CRYPTO_AES_NOUCE_SIZE + len + NRF_CRYPTO_AES_TAG_SIZE;
+            uint8_t payload[payload_length];
+
+            //start encryption time 
+            //uint32_t start_encrypt = app_timer_cnt_get();
+
+            encrypt_character_array(sensor_key, nounce, buf, payload, len);
+
+            // uint32_t end_encrypt = app_timer_cnt_get();
+            // //print encrypt time 
+            // uint32_t encrypt_time = app_timer_cnt_diff_compute(end_encrypt, start_encrypt);
+            // printf("mbedtls encrypt successful, seconds: %f\n", (encrypt_time / (float)APP_TIMER_CLOCK_FREQ));
+
+
+            memcpy(buf, payload, payload_length);
+
+            do {
+                ret = mbedtls_ssl_write(&ssl, buf, payload_length);
+            } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+                    ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+
+            if (ret < 0) {
+                printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+                //goto exit;
+            }
+
+            //end timer
+            uint32_t end_write = app_timer_cnt_get();
+
+            len = ret;
+
+            //print the time
+            uint32_t write_time = app_timer_cnt_diff_compute(end_write, start_write);
+            printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
+
+            //put the time in the array 
+            latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
         }
-
-        //end timer
-        end = app_timer_cnt_get();
-
-        len = ret;
-        //printf(" %d bytes written\n\n%s\n\n", len, buf);
-
-        //print the time
-        uint32_t write_time = app_timer_cnt_diff_compute(end, start);
-        printf("mbedtls write successful, seconds: %f\n", (write_time / (float)APP_TIMER_CLOCK_FREQ));
-
-        //put the time in the array 
-        latency_array[i] = write_time/(float)APP_TIMER_CLOCK_FREQ;
 
     }
 
 
-    // // normal write 
-    // printf("  > Write to client:");
-    // fflush(stdout);
-
-    // do {
-    //     ret = mbedtls_ssl_write(&ssl, buf, len);
-    // } while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
-    //          ret == MBEDTLS_ERR_SSL_WANT_WRITE);
-
-    // if (ret < 0) {
-    //     printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
-    //     //goto exit;
-    // }
-
-    // len = ret;
-    // printf(" %d bytes written\n\n%s\n\n", len, buf);
+    //stop ourselves from continuing on (mbedworks!! yay)
+    while(true) {
+        nrf_delay_ms(1000);
+        //printf("waiting after data test yay\n");
+    }
 
 
 
