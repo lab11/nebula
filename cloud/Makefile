@@ -1,7 +1,7 @@
 SERVER_PORT ?= 80
 PROVIDER_PORT ?= 90
 SERVER_MODE ?= app
-PROVIDER_URL ?=http://0.0.0.0:90
+PROVIDER_URL ?=https://0.0.0.0:90
 
 .PHONY: build local remote clean destroy-local destroy-remote keypair
 

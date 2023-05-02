@@ -3,7 +3,6 @@ import tokenlib
 import util
 import platform_db
 import platform_tokendb
-import asyncio
 
 # load keypair (generated with gen_keypair.py)
 with open('keypair.bin', 'rb') as f:
@@ -26,12 +25,10 @@ def sign_tokens(payload) -> "list[str]":
     return [util.encode_bytes(token) for token in signed_tokens]
 
 
-async def redeem_tokens(payload) -> int:
+def redeem_tokens(payload) -> int:
     decoded_tokens = [util.decode_bytes(token) for token in payload["tokens"]]
-    # valid_tokens = [token for token in decoded_tokens if tokenlib.verify_token(_keypair, token)]
-    # num_unused = token_db.add_new_elements(valid_tokens)
-    # mule_db.batch_increment_counts([('mule', num_unused)])
-    return len(decoded_tokens)
+    valid_tokens = [token for token in decoded_tokens if tokenlib.verify_token(_keypair, token)]
+    num_unused = token_db.add_new_elements(valid_tokens)
+    mule_db.batch_increment_counts([('mule', num_unused)])
+    return 0
 
-def process_redeem_tokens(payload):
-    asyncio.create_task(redeem_tokens(payload))

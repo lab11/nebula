@@ -1,12 +1,10 @@
 import sqlite3
-import threading
 
-DEBUG = True
+DEBUG = False
 
 class StringSet:
     def __init__(self):
         self.conn = sqlite3.connect("strings.db", check_same_thread=False)
-        self.lock = threading.Lock()
         self._create_table()
 
     def _create_table(self):
@@ -19,20 +17,10 @@ class StringSet:
         self.conn.commit()
 
     def add_new_elements(self, new_strings):
-        with self.lock:
-            cursor = self.conn.cursor()
-            initial_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
-
-            for string in new_strings:
-                try:
-                    cursor.execute("INSERT INTO strings (value) VALUES (?)", (string,))
-                except sqlite3.IntegrityError:
-                    pass
-
-            self.conn.commit()
-
-            final_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
-            return final_size - initial_size
+        cursor = self.conn.cursor()
+        cursor.executemany("INSERT OR IGNORE INTO strings (value) VALUES (?)", [(string,) for string in new_strings])
+        self.conn.commit()
+        return cursor.rowcount
 
     def close(self):
         self.conn.close()
