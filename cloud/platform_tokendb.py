@@ -1,53 +1,44 @@
-import sqlite3
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import threading
 
-DEBUG = True
+DEBUG = False
+class ConcurrentDict:
+    def __init__(self):
+        self._dict = {}
+        self._dict_lock=threading.Lock()
+
+    def add_if_not_exists(self, key):
+        with self._dict_lock:
+            if key not in self._dict:
+                self._dict[key] = True
+                return True
+            return False
 
 class StringSet:
-    def __init__(self):
-        self.conn = sqlite3.connect("strings.db", check_same_thread=False)
-        self.lock = threading.Lock()
-        self._create_table()
+    def __init__(self, num_shards=32):
+        self._shards = [ConcurrentDict() for _ in range(num_shards)]
 
-    def _create_table(self):
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS strings (
-                value TEXT PRIMARY KEY
-            )
-        """)
-        self.conn.commit()
+    def _get_shard(self, key):
+        if isinstance(key, str):
+            key = key.encode()
+        hash_key = hashlib.blake2b(key).hexdigest()
+        shard_index = int(hash_key, 16) % len(self._shards)
+        return self._shards[shard_index]
 
-    def add_new_elements(self, new_strings):
-        with self.lock:
-            cursor = self.conn.cursor()
-            initial_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
+    def add_if_not_exists(self, key):
+        shard = self._get_shard(key)
+        return shard.add_if_not_exists(key)
 
-            for string in new_strings:
-                try:
-                    cursor.execute("INSERT INTO strings (value) VALUES (?)", (string,))
-                except sqlite3.IntegrityError:
-                    pass
-
-            self.conn.commit()
-
-            final_size = cursor.execute("SELECT COUNT(*) FROM strings").fetchone()[0]
-            return final_size - initial_size
-
-    def close(self):
-        self.conn.close()
+    def add_new_elements(self, keys, max_workers=128):
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(self.add_if_not_exists, keys)
+        new_keys_count = sum(1 for result in results if result)
+        return new_keys_count
 
 if DEBUG:
-
-    string_set = StringSet()
-
-    # Add new strings to the set and print the number of new elements added
-    new_strings = ['hello', 'world', 'foo', 'bar']
-    print(string_set.add_new_elements(new_strings))  # Output: 4
-
-    # Add some new strings and some existing strings
-    new_strings = ['hello', 'world', 'python', 'example']
-    print(string_set.add_new_elements(new_strings))  # Output: 2
-
-    string_set.close()
+    sharded_dict = StringSet()
+    keys = ['key1', 'key2', 'key3', 'key4', 'key5']
+    results = sharded_dict.add_new_elements(keys)
+    print(results)
 
