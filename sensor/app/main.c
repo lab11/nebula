@@ -907,6 +907,8 @@ int main(void) {
 
     while (ble_conn_state_status(ble_conn_handle) != BLE_CONN_STATUS_CONNECTED) {
         printf("waiting to connect..\n");
+        //power save
+        power_manage();
         nrf_delay_ms(100);
         ble_conn_handle = simple_ble_app->conn_handle;
     }
