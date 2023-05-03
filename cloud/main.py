@@ -27,12 +27,6 @@ class FunctionThread(threading.Thread):
 
 async def make_threaded_call(request: Request, fn, should_be_provider: bool):
 
-    # Turn off provider API for app server and vice versa
-    if (should_be_provider and not os.environ.get("SERVER_MODE") == "provider") or \
-        (not should_be_provider and not os.environ.get("SERVER_MODE") == "app"):
-        print("Not a {} server".format("provider" if should_be_provider else "app"))
-        raise HTTPException(status_code=404, detail="Not found")
-
     params = dict(request.query_params)
     body_json = None
     try: 
@@ -42,14 +36,12 @@ async def make_threaded_call(request: Request, fn, should_be_provider: bool):
         #print(request.text())
 
     def call_function_threaded():
-        print("Calling function {} with params {} and body {}".format(fn, params, body_json))
         return fn(**params, payload=body_json)
 
     thread = FunctionThread(target=call_function_threaded)
     thread.start()
     thread.join()
 
-    print("Result: {}".format(thread.result))
     return {"result": thread.result}
 
 @app.get("/public_params")
