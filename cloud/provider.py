@@ -28,6 +28,6 @@ def redeem_tokens(payload) -> int:
     decoded_tokens = [util.decode_bytes(token) for token in payload["tokens"]]
     valid_tokens = [token for token in decoded_tokens if tokenlib.verify_token(_keypair, token)]
     num_unused = token_db.add_new_elements(valid_tokens)
-    mule_db.batch_increment_counts([('mule', num_unused)])
+    # mule_db.batch_increment_counts([('mule', num_unused)])
     return num_unused
 
