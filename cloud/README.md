@@ -70,12 +70,22 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             {
                 "result": <encoded public parameter str>
             }
+            
+   * `GET /complaint_public_params`
+        Params: (none)
+        Body:   (none)
+
+        Returns:
+            {
+                "result": <encoded complaint public parameter str (diff. from above)>
+            }
 
     * `POST /sign_tokens`
         Params: (none)
         Body: 
             Content-type: application/json
             {
+                "mode": <either "data" or "complaint">,
                 "blinded_tokens": [<encoded blinded token strs>]
             }
 
@@ -83,6 +93,8 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             {
                 "result": [<encoded signed token strs>]
             }
+            
+        // If the mode is "data", then the provider uses the normal keypair to sign all the tokens. If the mode is "complaint", then the provider uses the complaint keypair to sign UP TO <X> tokens (let's say, 100). Assume we check identity, which we don't rn.
 
     * `POST /redeem_tokens`
         Params: (none)
@@ -96,6 +108,22 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             {
                 "result": <number valid tokens>
             }
+            
+     * `POST /complain`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "token": <encoded token str>,
+                "data": <encoded complaint bytes, not important>
+            }
+
+        Returns:
+            {
+                "result": <number valid tokens>
+            }
+            
+        // Verifies that the token was signed correctly using the complaint key and calls some function that processes the data bytes
 
 ### Application Server
 
