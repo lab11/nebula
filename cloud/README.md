@@ -70,8 +70,8 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             {
                 "result": <encoded public parameter str>
             }
-            
-   * `GET /complaint_public_params`
+
+    * `GET /complaint_public_params`
         Params: (none)
         Body:   (none)
 
@@ -109,7 +109,7 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
                 "result": <number valid tokens>
             }
             
-     * `POST /complain`
+    * `POST /complain`
         Params: (none)
         Body:
             Content-type: application/json
