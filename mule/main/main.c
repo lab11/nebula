@@ -74,6 +74,8 @@ static const ble_uuid_t *metadata_chr_uuid = BLE_UUID128_DECLARE(
 
 #define CHUNK_SIZE 200
 #define MAX_PAYLOADS 10
+#define MAX_TOKENS 10
+#define TOKEN_SIZE 88 // each token is 88 bytes
 #define READ_TIMEOUT_MS 1000
 #define MAX_RETRY       5
 #define SERVER_NAME "SENSOR_LAB11"
@@ -85,9 +87,19 @@ uint8_t metadata_state [3];
 
 // A big buffer and pointer array to hold our payloads :3
 static int num_payloads = 0;
-static uint8_t big_data [10000] = {0};
+static uint8_t big_data [12000]; // 12 kB for upload timing testing.
 static uint8_t *payloads [MAX_PAYLOADS+1];
 
+// A little buffer and pointer array to hold our tokens.
+static int num_stored_tokens = 0;
+static char token_buff[MAX_TOKENS*TOKEN_SIZE]; // only need to hold 7 tokens for upload timing testing.
+// static char *token_starts[12]; // we can store up to 11 tokens. since tokens are fixed size, we can math into the array.
+
+// A large buffer to hold our HTTP(S) requests before sending.
+static char post_data[14000]; // 14 kB payloads for upload timing testing.
+
+// A small buffer to hold our HTTP(S) responses.
+static char responseBuffer[200]; // I think the responses should be relatively small.
 
 static const char *tag = "MULE_LAB11"; // The Mule is an ESP32 device
 static int mule_ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -101,11 +113,6 @@ bool sema_metadata;
 bool sema_data; 
 
 void ble_store_config_init();
-
-// A little buffer and pointer array to hold our tokens
-static int num_stored_tokens = 0;
-static char token_buff[1000] = {0}; // each token is 88 bytes
-static char *token_starts[12]; // we can store up to 11 tokens
 
 /*  Root certs for our application server and platform provider. 
     
@@ -909,7 +916,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
 void http_get_test(void) {
 
     // Instantiate a buffer to hold our resulting data.
-    char responseBuffer[200] = {0}; // I think our responses are 197 bytes long, so this should fit.
+    //char responseBuffer[200] = {0}; // I think our responses are 197 bytes long, so this should fit. // instantiated on the heap instead of on the stack.
     
     esp_http_client_config_t config = {
         .host = "34.31.110.212", // ping our provider server
@@ -961,10 +968,10 @@ static void https_with_url(void)
 static void https_with_hostname_path(void)
 {
     // Instantiate a buffer to hold our resulting data.
-    char responseBuffer[200] = {0}; // I think our responses are 197 bytes long, so this should fit.
+    //char responseBuffer[200] = {0}; // I think our responses are 197 bytes long, so this should fit. // instantiated on the heap instead of on the stack
     
     esp_http_client_config_t config = {
-        .host = "34.27.170.95", //"www.howsmyssl.com",
+        .host = "34.68.123.54", //"www.howsmyssl.com",
         .path = "/public_params", //"/",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
@@ -1000,9 +1007,13 @@ char *encode_bytes_to_base64(char *dest, void *src, size_t src_len, size_t dest_
 
 // Takes in a NULL-terminated string as a payload.
 void https_attempt_single_upload(uint8_t payload[], int payload_len) {
+    // For timing purposes.
+    clock_t t;
+    t = clock();
+    
     char json_prefix[] = "{\"data\":\"";
     char json_suffix[] = "\"}";
-    char post_data[1200] = {0};
+    //char post_data[1200] = {0}; // declared on the heap instead of on the stack.
     int prefix_len = sizeof(json_prefix) - 1;
     int suffix_len = sizeof(json_suffix) - 1;
     
@@ -1013,7 +1024,7 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     }
     
     // Instantiate a buffer to hold our resulting data.
-    char responseBuffer[105] = {0}; // I think our responses are 101 bytes long, so this should fit.
+    //char responseBuffer[105] = {0}; // I think our responses are 101 bytes long, so this should fit. // instantiated on the heap instead of on the stack.
     
     /* HTTP code
     // If everything looks ok, we do a POST request.
@@ -1029,7 +1040,7 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     
     // If everything looks ok, we do a POST request over HTTPS.
     esp_http_client_config_t config = {
-        .host = "34.31.110.212", // hehe we only have one APP server :3
+        .host = "35.192.188.219", // hehe we only have one APP server :3
         .path = "/deliver",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
@@ -1051,7 +1062,7 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     int encoded_payload_len = payload_end - (post_data + prefix_len);
     int post_len = prefix_len + encoded_payload_len + suffix_len;
     //printf("Payload = %s\n", payload);
-    printf("Prefix length = %d, suffix length = %d, payload_len = %d, post_len = %d\n", prefix_len, suffix_len, encoded_payload_len, post_len);
+    //printf("Prefix length = %d, suffix length = %d, payload_len = %d, post_len = %d\n", prefix_len, suffix_len, encoded_payload_len, post_len);
 
     // Check to make sure the payload isn't too long.
     if (post_len >= sizeof(post_data)) {
@@ -1067,6 +1078,7 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
     
     //printf("POST request = %s\n", post_data);
     
+    /* stop printing out the entire payload smh.
     for (int aChar = 0; aChar < post_len; aChar++) {
         if (post_data[aChar] == 0) {
             printf("NULL");
@@ -1074,36 +1086,43 @@ void https_attempt_single_upload(uint8_t payload[], int payload_len) {
             printf("%c", post_data[aChar]);
         }
     } printf("\n");
+    */
     
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
+        /* No need to actually print this stuff out.
         printf("HTTP POST Status = %d, content_length = %"PRIu64"\n",
                 esp_http_client_get_status_code(client),
                 esp_http_client_get_content_length(client));
         printf("HTTP POST data = %s\n", responseBuffer);
+        */
         
         // Store the returned token into token_buff[880] and update token_starts[11] and num_stored_tokens accordingly.
         // Assumes that the format of the response is {"result":"token"}.
-        int token_len = strlen(responseBuffer) - 13;
+        // int token_len = strlen(responseBuffer) - 13; // hardcoded a token size of 88
         
         // If we're out of pointer space, we can't store the token.
-        if (num_stored_tokens >= sizeof(token_starts)) {
+        if (num_stored_tokens >= MAX_TOKENS) {
             printf("You already have %d tokens and cannot store any more tokens without redeeming!\n", num_stored_tokens);
-        } else if (sizeof(token_buff) - (token_starts[num_stored_tokens] - token_buff) < token_len) {
-        // If we're out of buffer space, we can't store the token.
-            printf("We are out of token buffer space and cannot store any more tokens without redeeming!\n");
         } else {
         // If all is well, then we store the token and update our bookkeeping.
-            memcpy(token_starts[num_stored_tokens], responseBuffer + 11, token_len);
+            memcpy(token_buff + num_stored_tokens*TOKEN_SIZE, responseBuffer + 11, TOKEN_SIZE);
             num_stored_tokens++;
-            token_starts[num_stored_tokens] = token_starts[num_stored_tokens - 1] + token_len;
         }
         
     } else {
+        // Print an error if the request failed.
         printf("HTTP POST request failed: %s\n", esp_err_to_name(err));
     }
 
     esp_http_client_cleanup(client);
+    
+    // End timer and print out results.
+    t = clock() - t;
+    double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+    
+    // Print payload size, request size, and time for response.
+    printf("%d,%d,%f\n", encoded_payload_len, post_len, time_taken);
 }
 
 // Takes in an array of pointers to NULL-terminated strings.
@@ -1119,11 +1138,10 @@ void https_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated htt
     char json_prefix[] = "{\"tokens\":[\"";
     char json_suffix[] = "\"]}";
     char json_delim[] = "\",\"";
-    char post_data[1000] = {0};
+    //char post_data[1000] = {0}; // declared on the heap instead of on the stack.
     int prefix_len = sizeof(json_prefix) - 1;
     int suffix_len = sizeof(json_suffix) - 1;
     int delim_len = sizeof(json_delim) - 1;
-    int token_len;
     int cur_post_length = 0;
     
     // Check to make sure we have tokens to redeem.
@@ -1133,11 +1151,11 @@ void https_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated htt
     }
 
     // Instantiate a buffer to hold our resulting data.
-    char responseBuffer[20] = {0}; // I think our responses are very small, so this should fit.
+    //char responseBuffer[20] = {0}; // I think our responses are very small, so this should fit. // Instantiated on the heap instead of on the stack.
     
     // Initiate a POST request.
     esp_http_client_config_t config = {
-        .host = "34.27.170.95", // hehe we hardcode the provider IP :3
+        .host = "34.68.123.54", // hehe we hardcode the provider IP :3
         .path = "/redeem_tokens",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .event_handler = _http_event_handler,
@@ -1153,19 +1171,16 @@ void https_attempt_redeem() { //char *tokens[], int num_tokens) { // Updated htt
 
     // Iterate through the tokens and append them all into one JSON string.
     for (int i = 0; i < num_stored_tokens; i++) {
-        // Slap the next token onto the string.
-        token_len = token_starts[i+1] - token_starts[i];
-        
         // Check to make sure if it's too big.
-        if (cur_post_length + token_len >= sizeof(post_data) + suffix_len + 1) {
+        if (cur_post_length + TOKEN_SIZE >= sizeof(post_data) + suffix_len + 1) {
             printf("YOU HAVE TO MANY TOKENS!!!");
             return;
             // In the future, we would probably just want to send what we can
             // and then do some more sending later.
         }
         
-        memcpy(post_data + cur_post_length, token_starts[i], token_len);
-        cur_post_length += token_len;
+        memcpy(post_data + cur_post_length, token_buff + i*TOKEN_SIZE, TOKEN_SIZE);
+        cur_post_length += TOKEN_SIZE;
         memcpy(post_data + cur_post_length, json_delim, delim_len);
         cur_post_length += delim_len;
     }
@@ -1205,12 +1220,11 @@ void app_main() {
     print_chip_info();
     init_nvs();
     // init_wifi();
-    token_starts[0] = token_buff; // initialize the token storage to start at the token buffer.
     payloads[0] = big_data; // initialize the payload storage to start at the payload buffer.
 
     /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
      # # # # Commenting out BLE stuff to test WiFi stuff # # # #
-     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
     //
     // ~~~~~~~~ NIMBLE SCARY LAND >:( ~~~~~~~~~
@@ -1320,7 +1334,7 @@ void app_main() {
     
     //get connection handle 
     
-    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
      # # # END commenting out BLE stuff to test WiFi stuff # # #
      # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
 
@@ -1356,11 +1370,7 @@ void app_main() {
         payloads[num_payloads] = payloads[num_payloads-1] + sizeof(a_payload);
     }
     
-     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-     # # # # # # END commenting out WiFi test stuff  # # # # # #
-     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
-
-    // Upload all of our data to the application servers and collect tokens :3
+        // Upload all of our data to the application servers and collect tokens :3
     https_attempt_many_uploads();
     
     printf("Finished our multiple upload!!\n\nNow trying the token redemption!\n");
@@ -1368,6 +1378,58 @@ void app_main() {
     https_attempt_redeem();
     
     printf("Finished the token redemption test! Hopefully everything works >.>\n");
+    
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # END commenting out WiFi test stuff  # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
+     
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # Commenting out upload timing stuff  # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
+
+    // A quick sanity check to see if we can do HTTPS stuff from the tutorial.
+    printf("\nDoing a generic HTTPS with hostname path (from the tutorial)\n");
+    https_with_hostname_path();
+
+    // Generate some fake payloads
+    // (We don't actually populate the payloads buffer. We just manipulate bookkeeping into thinking we have payloads)
+    int payload_sizes[5] = {1, 10, 100, 1000, 10000};
+    num_payloads = 5;
+    for (int i = 0; i < 5; i++) {
+        payloads[i+1] = payloads[i] + payload_sizes[i];
+    }
+    
+    // Upload our data to the application servers and collect tokens.
+    https_attempt_many_uploads();
+    
+    // Redeem our tokens for funsies.
+    https_attempt_redeem();
+    
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # END commenting out upload timing stuff  # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
+     
+    /* # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # # Commenting out redeem timing stuff  # # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+    // A quick sanity check to see if we can do HTTPS stuff from the tutorial.
+    printf("\nDoing a generic HTTPS with hostname path (from the tutorial)\n");
+    https_with_hostname_path();
+
+    // Generate some fake tokens.
+    int NUM_FAKE_PAYLOADS = 5;
+    uint8_t a_payload[12] = { 0xDE,0xAD,0xBE,0xEF,0x00,0xB1,0x6B,0x00,0xB5,0x00,0xB0,0xBA };
+    for (int i = 0; i < NUM_FAKE_PAYLOADS; i++) {
+        printf("memcpy from %p to %p len %d\n", a_payload, payloads[num_payloads], sizeof(a_payload));
+        memcpy(payloads[num_payloads], a_payload, sizeof(a_payload)); 
+        num_payloads++;
+        payloads[num_payloads] = payloads[num_payloads-1] + sizeof(a_payload);
+    }
+    
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+     # # # # # END commenting out redeem timing stuff  # # # # #
+     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # */
 
     //TODO: clean up mbedtls stuff and restart 
     
