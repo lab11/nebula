@@ -1,6 +1,6 @@
 # Galaxy Cloud - Provider and Application Servers
 
-## DAtabases on the Provider
+## Databases on the Provider
 * provider_db.py runs a database with schema {mule_id, count}
 * platform_tokendb.py maintains a set of tokens.  
 
@@ -108,6 +108,22 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             {
                 "result": <number valid tokens>
             }
+
+    * `POST /query_provider`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "tokens": [<encoded token strs>]
+            }
+
+        Returns:
+            {
+                "result": {
+                    "invalid_tokens": [...],
+                    "duplicate_tokens": [...]
+                }
+            }
             
     * `POST /complain`
         Params: (none)
@@ -115,17 +131,33 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
             Content-type: application/json
             {
                 "token": <encoded token str>,
-                "data": <encoded complaint bytes, not important>
+                "blinded_token": <encoded token str>,
+                "complaint": <encoded complaint bytes, not important>,
+                "payload": <bytes, might be empty>,
+                "sig": <bytes, might be empty>
             }
 
         Returns:
             {
-                "result": <number valid tokens>
+                "result": <signed token or empty>
             }
             
         // Verifies that the token was signed correctly using the complaint key and calls some function that processes the data bytes
 
 ### Application Server
+
+    * `POST /predeliver`
+        Params: (none)
+        Body:
+            Content-type: application/json
+            {
+                "data": <predeliver data>
+            }
+
+        Returns:
+            {
+                "result": <encoded response bytes>
+            }
 
     * `POST /deliver`
         Params: (none)
@@ -137,5 +169,5 @@ Then you'll be able to deploy the services (note: the API will be publicly acces
 
         Returns:
             {
-                "result": <encoded token str>
+                "result": <encoded token payload>
             }
