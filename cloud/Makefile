@@ -38,7 +38,7 @@ destroy-local:
 destroy-remote:
 	cd tf/gcp && terraform destroy -auto-approve
 
-keypair:
+keypair: build
 	maturin develop --manifest-path anonymous-tokens-lib/Cargo.toml --release
 	python gen_keypair.py
 	python gen_credentials.py

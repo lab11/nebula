@@ -91,7 +91,7 @@ def deliver_payload(_provider_url, appserver_url):
         print(f'  Predelivery sig: {util.encode_bytes_b64(predelivery_signature)}')
 
         if not util.verify_ecdsa(
-                util.load_public_key('jl-public-ecc.pem'),
+                util.load_public_key('appserver-public-ecc.pem'),
                 predelivery_payload,
                 predelivery_signature):
             print(f'  Error verifying predelivery signature')
@@ -115,7 +115,7 @@ def deliver_payload(_provider_url, appserver_url):
 
         token_payload, token_signature = payloads.SignedTokenPayload.deserialize(response.content)
         if not util.verify_ecdsa(
-                util.load_public_key('jl-public-ecc.pem'),
+                util.load_public_key('appserver-public-ecc.pem'),
                 token_payload,
                 token_signature):
             print(f'  Error verifying token signature')
@@ -213,7 +213,7 @@ def complain_deliver(_provider_url, appserver_url):
         print(f'  Predelivery sig: {util.encode_bytes_b64(predelivery_signature)}')
 
         if not util.verify_ecdsa(
-                util.load_public_key('jl-public-ecc.pem'),
+                util.load_public_key('appserver-public-ecc.pem'),
                 predelivery_payload,
                 predelivery_signature):
             print(f'  Error verifying predelivery signature')

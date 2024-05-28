@@ -17,7 +17,9 @@ variable "appserver_port" {
   default = 8080
 }
 
-provider "docker" {}
+provider "docker" {
+  host = "unix:///var/run/docker.sock"
+}
 
 resource "docker_image" "galaxy_cloud" {
   name         = "galaxy_cloud:latest"
@@ -32,7 +34,7 @@ resource "docker_container" "galaxy_provider" {
   image = docker_image.galaxy_cloud.image_id
   name  = "provider"
   rm    = true
-  tty   = true
+  start = true
   env   = [
     "SERVER_PORT=${var.provider_port}",
     "SERVER_MODE=provider",
@@ -53,7 +55,7 @@ resource "docker_container" "galaxy_appserver" {
   image = docker_image.galaxy_cloud.image_id
   name  = "appserver"
   rm    = true
-  tty   = true
+  start = true
   env   = [
     "SERVER_PORT=${var.appserver_port}",
     "SERVER_MODE=app",

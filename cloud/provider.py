@@ -14,7 +14,7 @@ import os
 with open('keypair.bin', 'rb') as f:
     _keypair = f.read()
 
-with open('complaint_keypair.bin', 'rb') as f:
+with open('complaints-keypair.bin', 'rb') as f:
     _complaint_keypair = f.read()
 
 # -- Provider State --
@@ -22,7 +22,7 @@ use_tls = os.environ.get('SERVER_TLS') == 'true'
 # map of known appserver id -> {'public_key': <>, 'url': <>}
 appservers = {
     (0).to_bytes(16, 'big'): {
-        'public_key': util.load_public_key('jl-public-ecc.pem'),
+        'public_key': util.load_public_key('appserver-public-ecc.pem'),
         'url': 'http://appserver:8080'
     }
 }
